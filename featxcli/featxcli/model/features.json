@@ -1,0 +1,98 @@
+{
+    "name":"root",
+    "sub":[
+        {
+            "name":"attach_service",
+            "isOptional": false,
+            "includes":"move_shelf_to_ship",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"approach_service_server",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Early",
+                    "bindingModeAllowed": "Static"
+                }]
+        },
+        {
+            "name":"localisation_server",
+            "isOptional": false,
+            "includes":"mapping",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"nav2_amcl",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Early",
+                    "bindingModeAllowed": "Static"
+                }]
+        },
+        {
+            "name":"navigation",
+            "isOptional": false,
+            "includes":"localisation_server",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"nav2_apps",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Early",
+                    "bindingModeAllowed": "Static",
+                    "sub":[
+                        {
+                            "name":"move_shelf_to_ship",
+                            "isOptional": false,
+                            "includes":"",
+                            "excludes":"",
+                            "bindingTimeAllowed": "Late",
+                            "bindingModeAllowed": "Static"
+                        }]
+                }]
+        },
+        {
+            "name":"SLAM",
+            "isOptional": false,
+            "includes":"mapping",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"cartographer_slam",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Early",
+                    "bindingModeAllowed": "Static"
+                }]
+        },
+        {
+            "name":"mapping",
+            "isOptional": false,
+            "includes":"",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"nav2_map_server",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Early",
+                    "bindingModeAllowed": "Static"
+                }]
+        }]
+}

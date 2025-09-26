@@ -1,0 +1,69 @@
+{
+    "configs":[
+        {
+            "name": "attach_service",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "localisation_server",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "navigation",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "SLAM",
+            "isSelected": false,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "mapping",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "approach_service_server",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "nav2_amcl",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "nav2_apps",
+            "isSelected": false,
+            "bindingTime": "Early",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "move_shelf_to_ship",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "cartographer_slam",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "nav2_map_server",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        }]
+}

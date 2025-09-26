@@ -1,0 +1,7 @@
+__pycache__
+
+# VSCode
+.vscode
+
+featxcli/.vscode
+featxcli/.pytest_cache

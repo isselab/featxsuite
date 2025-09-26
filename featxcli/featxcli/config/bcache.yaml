@@ -1,0 +1,6 @@
+fx_configurator:
+  ros__parameters:
+    static_early: []
+    static_late: []
+    dynamic_early: []
+    dynamic_late: []
