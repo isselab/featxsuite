@@ -66,6 +66,24 @@ class Configurator:
             if cfg["name"] == name:
                 return cfg["bindingMode"]
         return None
+    
+    def check_for_parent_feature(self, features, name):
+        if "sub" in features:
+            parent_feature_name = features['name']
+            
+            for subObject in features['sub']:
+                
+                if subObject['name'] == name:
+                    return parent_feature_name
+                else:
+                    result = self.check_for_parent_feature(subObject, name)
+                    if result:  #if found in recursion, bubble it up
+                        return result
+        return None
+    
+    def get_parent(self, config_name):
+        features = self.readFeatures()
+        return self.check_for_parent_feature(features, config_name)
 
     def traverseModel(self, fx_model):
         if "sub" in fx_model:

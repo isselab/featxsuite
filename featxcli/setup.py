@@ -1,16 +1,25 @@
-import os
+import sys
 import subprocess
 from setuptools import find_packages, setup
 from setuptools.command.install import install
 
 package_name = 'featxcli'
 
+class CustomInstall(install):
+    def run(self):
+        subprocess.run(
+            ["../featxbinder/scripts/start_early.sh"],
+            check=True,
+            stdout=sys.stderr
+        )
+        install.run(self)
+
 setup(
     name=package_name,
     version='0.0.1',
     packages=find_packages(exclude=['test']),
     package_data={
-        package_name: ['model/*.json'],  # <-- This line ensures model files get installed
+        package_name: ['model/*.json'],  # <-- This line ensures model and config files get installed
     },
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -26,6 +35,9 @@ setup(
     url='',
     download_url='',
     keywords=[],
+    cmdclass={
+        'install': CustomInstall,
+    },
     classifiers=[
         'Environment :: Console',
         'Intended Audience :: Developers, Operators, Manufacturers, System Engineers',

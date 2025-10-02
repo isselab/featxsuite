@@ -62,7 +62,7 @@
                 }]
         },
         {
-            "name":"SLAM",
+            "name":"slam",
             "isOptional": false,
             "includes":"mapping",
             "excludes":"",

@@ -5,3 +5,7 @@ __pycache__
 
 featxcli/.vscode
 featxcli/.pytest_cache
+
+featxbinder/build/
+featxbinder/install/
+featxbinder/log/

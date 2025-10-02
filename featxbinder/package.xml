@@ -3,9 +3,9 @@
 <package format="3">
   <name>featxbinder</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="jude.gyimah87@gmail.com">fr0b0</maintainer>
-  <license>TODO: License declaration</license>
+  <description>The binder for feature implementation</description>
+  <maintainer email="fr0b0@fr0b0.com">fr0b0</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
