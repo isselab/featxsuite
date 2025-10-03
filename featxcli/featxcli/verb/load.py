@@ -8,7 +8,7 @@ class LoadVerb(VerbExtension):
     def add_arguments(self, parser, cli_name):
         parser.add_argument('-f', '--feature', type=str, required=True, help='Loading a configured feature into a configuration')
         
-    def run_ros2_featx_load_command(self, command):
+    def run_ros2_featx_load_command(self):
         configurator = Configurator()
         configurator.checkRules()
 
@@ -22,9 +22,7 @@ class LoadVerb(VerbExtension):
 
         if feature_exists:
             print(f"++Loading feature: {str(args.feature)}...++")
-            self.msgString = "{"+f"verb: 'load', featureid: '{str(args.feature).strip()}'"+"}"
-            self.command_input = ["ros2", "topic", "pub", "-1", "/fx_command", "featxcli_interfaces/msg/FxReconfigureCmd", self.msgString]
-            self.run_ros2_featx_load_command(self.command_input)
+            self.run_ros2_featx_load_command()
         else:
             print(f"++Feature: {str(args.feature)} has not been defined in features.json...++")
 

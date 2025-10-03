@@ -60,6 +60,7 @@ setup(
         'featxcli.verb': [
             'load = featxcli.verb.load:LoadVerb',
             'unload = featxcli.verb.unload:UnloadVerb',
+            'start_config = featxcli.verb.start_config:StartConfigVerb',
         ],
     },
 )
