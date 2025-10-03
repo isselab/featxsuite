@@ -56,6 +56,14 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+add_executable(featx_binder src/featx_binder.cpp)
+ament_target_dependencies(featx_binder rclcpp)
+
+install(TARGETS
+featx_binder
+DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}

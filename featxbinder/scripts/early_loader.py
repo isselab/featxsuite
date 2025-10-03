@@ -58,7 +58,7 @@ for config in all_current_configs['configs']:
 
     
 
-
+template += "    Node(package='featxbinder', executable='featx_binder'),\n"
 template += " ])"
 
 def create_launch_file(template_full):
