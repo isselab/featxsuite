@@ -1,4 +1,5 @@
 import os
+from ament_index_python.packages import get_package_share_directory
 from featxcli.configurator import Configurator
 import xml.etree.ElementTree as ET
 
@@ -24,6 +25,9 @@ for config in all_current_configs['configs']:
         this_dir = os.path.dirname(os.path.abspath(__file__))
         package_xml_path = os.path.join(this_dir, f"../../../packages/{parent_feature_name}/package.xml")
         package_xml_path = os.path.normpath(package_xml_path)
+
+        pkg_share = get_package_share_directory('featxbinder')
+        param_file = os.path.join(pkg_share, 'config', 'featx_params.yaml')
 
         if os.path.exists(package_xml_path):
             tree = ET.parse(package_xml_path)
@@ -58,7 +62,10 @@ for config in all_current_configs['configs']:
 
     
 
-template += "    Node(package='featxbinder', executable='featx_binder'),\n"
+template += """    Node(
+         package='featxbinder', 
+         executable='featx_binder', 
+         parameters=['"""+param_file+"'])\n"
 template += " ])"
 
 def create_launch_file(template_full):

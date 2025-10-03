@@ -3,13 +3,16 @@
 class FeatxBinder : public rclcpp::Node{
 public:
     FeatxBinder() : Node("featx_binder"){
-        this->declare_parameter<std::string>("my_param", "default_value");
+        this->declare_parameter<std::string>("bindingTime", "Early");
+        rclcpp::Parameter param("bindingTime", "Late");
+        this->set_parameter(param);
+        RCLCPP_INFO(this->get_logger(), "featx_binder running...");
     }
 
     void update_parameter_before_shutdown(){
-        rclcpp::Parameter param("my_param", "new_value_before_shutdown");
+        rclcpp::Parameter param("bindingTime", "Early");
         this->set_parameter(param);
-        RCLCPP_INFO(this->get_logger(), "Parameter updated just before shutdown!");
+        RCLCPP_INFO(this->get_logger(), "bindingTime switched to Early before shutdown!");
     }
 };
 

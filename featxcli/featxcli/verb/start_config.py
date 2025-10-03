@@ -1,4 +1,7 @@
 import os, sys
+import rclpy
+from rclpy.node import Node
+from rclpy.parameter import Parameter
 from ros2cli.verb import VerbExtension
 from launch import LaunchService, LaunchDescription
 from launch.actions import IncludeLaunchDescription
@@ -29,4 +32,7 @@ class StartConfigVerb(VerbExtension):
     
     def main(self, *, args):
         sys.exit(self.run_ros2_featx_start_config_command())
+        node = Node("featx_binder")
+        param = Parameter("bindingTime", Parameter.Type.STRING, "Late")
+        node.set_parameters([param])
 
