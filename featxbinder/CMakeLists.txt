@@ -11,6 +11,10 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+#package exports
+ament_export_include_directories(include)
+ament_export_dependencies(rclcpp)
+
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../featxcli/featxcli/model/configs.json" CONFIGS_JSON_STRING)
 
 # Get number of elements in "configs"
@@ -68,6 +72,11 @@ install(DIRECTORY
   launch
   config
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
 )
 
 ament_package()

@@ -5,15 +5,6 @@ from setuptools.command.install import install
 
 package_name = 'featxcli'
 
-class CustomInstall(install):
-    def run(self):
-        subprocess.run(
-            ["../featxbinder/scripts/start_early.sh"],
-            check=True,
-            stdout=sys.stderr
-        )
-        install.run(self)
-
 setup(
     name=package_name,
     version='0.0.1',
@@ -35,9 +26,6 @@ setup(
     url='',
     download_url='',
     keywords=[],
-    cmdclass={
-        'install': CustomInstall,
-    },
     classifiers=[
         'Environment :: Console',
         'Intended Audience :: Developers, Operators, Manufacturers, System Engineers',

@@ -16,9 +16,10 @@ class StartConfigVerb(VerbExtension):
         pass
 
     def run_ros2_featx_start_config_command(self):
-
+        print("Launching early features that are selected...")
+        
         pkg_share = get_package_share_directory('featxbinder')
-        launch_file_path = os.path.join(pkg_share, 'launch', 'generated_early.launch.py')
+        launch_file_path = os.path.join(pkg_share, 'launch', 'early.launch.py')
 
         ls = LaunchService()
 
