@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(rclcpp_components REQUIRED)
 
 #package exports
 ament_export_include_directories(include)
@@ -60,12 +61,16 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-add_executable(featx_binder src/featx_binder.cpp)
-ament_target_dependencies(featx_binder rclcpp)
+add_library(featx_binder SHARED src/featx_binder.cpp)
+
+ament_target_dependencies(featx_binder rclcpp rclcpp_components)
+rclcpp_components_register_nodes(featx_binder "featx_plugin::FeatxBinder")
 
 install(TARGETS
-featx_binder
-DESTINATION lib/${PROJECT_NAME}
+  featx_binder
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 install(DIRECTORY
