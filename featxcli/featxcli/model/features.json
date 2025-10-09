@@ -15,7 +15,7 @@
                     "includes":"",
                     "excludes":"",
                     "bindingTimeAllowed": "Early",
-                    "bindingModeAllowed": "Static"
+                    "bindingModeAllowed": "Dynamic"
                 }]
         },
         {
@@ -31,7 +31,7 @@
                     "isOptional": false,
                     "includes":"",
                     "excludes":"",
-                    "bindingTimeAllowed": "Early",
+                    "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Static"
                 }]
         },
@@ -57,7 +57,7 @@
                             "includes":"",
                             "excludes":"",
                             "bindingTimeAllowed": "Late",
-                            "bindingModeAllowed": "Static"
+                            "bindingModeAllowed": "Dynamic"
                         }]
                 }]
         },
@@ -74,8 +74,8 @@
                     "isOptional": false,
                     "includes":"",
                     "excludes":"",
-                    "bindingTimeAllowed": "Early",
-                    "bindingModeAllowed": "Static"
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
                 }]
         },
         {

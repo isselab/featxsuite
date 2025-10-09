@@ -4,11 +4,13 @@ import json
 from pprint import pprint
 
 class Configurator:
+
     def __init__(self) -> None:
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.model_dir = os.path.join(self.base_dir, "model")
         self.all_configs = ""
         self.parent_feature = ""
+        self.issue_count = 0
 
     def readFeatures(self):
         features_path = os.path.join(self.model_dir, "features.json")
@@ -41,13 +43,16 @@ class Configurator:
         return None
     
     def check_for_feature(self, features, name):
-        if "sub" in features:
-            for subObject in features['sub']:
-                if subObject['name'] == name:
-                    return True
-                else:
-                    self.check_for_feature(subObject, name)
-        return None
+        if features.get("name") == name:
+            return features.get("name")  # Found the target
+        
+        #search recursively in "sub" nodes if present
+        for child in features.get("sub", []):
+            result = self.check_for_feature(child, name)
+            if result:
+                return result
+        
+        return None  #not found
     
 
     def find_feature(self, name):
@@ -86,6 +91,7 @@ class Configurator:
         return self.check_for_parent_feature(features, config_name)
 
     def traverseModel(self, fx_model):
+
         if "sub" in fx_model:
         
             if fx_model['name'] != "root":
@@ -96,16 +102,19 @@ class Configurator:
                 for config in self.all_configs['configs']:
                     if config['name'] == subObject['name']:
                         if config['bindingTime'] != subObject['bindingTimeAllowed'] or config['bindingMode'] != subObject['bindingModeAllowed']:
-                            print(f"Feature ({subObject['name']}) bindings not consistent")
+                            print(f" *Feature ({subObject['name']}): bindings not consistent")
+                            self.issue_count = self.issue_count + 1
 
                         #selected static cannot depend on dynamic
                         if config['bindingMode'] == "Static" and self.get_is_selected(subObject['name']) == True and self.get_binding_mode(self.parent_feature) == "Dynamic":
-                            print(f"Static and selected child {subObject['name']} depends on dynamic parent {self.parent_feature}")
+                            print(f" *Static and selected child {subObject['name']} depends on dynamic parent {self.parent_feature}")
+                            self.issue_count = self.issue_count + 1
 
                         #early feature cannot depend on a late feature unless none are selected or late is selected first
                         if self.get_binding_time(self.parent_feature) == "Late" and self.get_binding_time(subObject['name']) == "Early":
                             if self.get_is_selected(self.parent_feature) == False and self.get_is_selected(subObject['name']) == True:
-                                print(f"Early child feature {subObject['name']} cannot depends on late parent {self.parent_feature}, unless none are selected or the late is selected first")
+                                print(f" *Early child feature {subObject['name']} cannot depends on late parent {self.parent_feature}, unless none are selected or the late is selected first")
+                                self.issue_count = self.issue_count + 1
 
                         #features that exclude each other cannot be select simultaneaosly
                         if subObject['excludes'] != "":
@@ -113,11 +122,13 @@ class Configurator:
                             excluding = subObject['name']
 
                             if self.get_is_selected(excluded) == True and self.get_is_selected(excluding) == True:
-                                print(f"{excluded} and {excluding} exclude each other. They cannot be selected simultaneously")
+                                print(f" *{excluded} and {excluding} exclude each other. They cannot be selected simultaneously")
+                                self.issue_count = self.issue_count + 1
 
                 #selected feature cannot depend on deselected one
                 if self.get_is_selected(self.parent_feature) == False and self.get_is_selected(subObject['name']) == True:
-                    print(f"Parent {self.parent_feature} is deselected but child {subObject['name']} is selected")
+                    print(f" *Parent {self.parent_feature} is deselected but child {subObject['name']} is selected")
+                    self.issue_count = self.issue_count + 1
                     self.parent_feature = ""
 
                           
@@ -129,4 +140,5 @@ class Configurator:
         self.all_configs = self.readConfigs()
 
         self.traverseModel(all_features)
+        print(f"\t--- ({self.issue_count}) issue(s) detected ---")
     
