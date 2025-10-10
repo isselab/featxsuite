@@ -7,7 +7,6 @@ from launch_ros.descriptions import ComposableNode
 def generate_launch_description():
     pkg_share = get_package_share_directory('featxbinder')
     yaml_file = os.path.join(pkg_share, 'config', 'featx_params.yaml')
-    print(f"YAML file path: {yaml_file}")
 
     container = ComposableNodeContainer(
         name='featx_container',

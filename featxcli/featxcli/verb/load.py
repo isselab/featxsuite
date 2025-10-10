@@ -27,8 +27,7 @@ class LoadVerb(VerbExtension):
                 bt_value = bt_result.stdout.split(":")[1].strip()
 
                 if bt_value == "Late":
-                    #if its not static ealy, load it and update selection status in model
-                    #you can load static late, dynamic early, dynamic late
+                    
                     fmode = configurator.get_binding_mode(feature_name)
                     ftime = configurator.get_binding_time(feature_name)
 
@@ -59,12 +58,18 @@ class LoadVerb(VerbExtension):
                                 print("No registered component match found.")
 
                             print(f"Loading plugin {plugin_name} in package {package_name}")
-                            #load_result = subprocess.run(['ros2', 'component', 'load', '/featx_container', package_name, plugin_name],capture_output=True, text=True)
+                            load_result = subprocess.run(['ros2', 'component', 'load', '/featx_container', package_name, plugin_name],capture_output=True, text=True)
 
-                            print(f"{feature_name} loaded successfully.")
+                            if load_result.returncode == 0:
+                                print(load_result.stdout)
+                            elif load_result.returncode == 1:
+                                print(load_result.stderr)
+
+                            print(f"{feature_name} loaded successfully.\n")
                         else:
                             print(f"File not found at: {cml_file_path}")
                             #is a python package
+                            #ad hoc method to build and add python nodes
 
                 else:
                     print("Binding time not late. Cannot run this command at compile time")
