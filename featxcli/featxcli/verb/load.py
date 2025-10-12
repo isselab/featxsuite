@@ -37,12 +37,18 @@ class LoadVerb(VerbExtension):
                         print(f"*** Loading feature: {feature_name}...***")
                         package_name = configurator.get_parent(feature_name)
                         pkg_share = get_package_share_directory(package_name)
-                        # build full absolute path
                         
+                        #check for CMakeLists.txt file
                         nav_to_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name)
                         cml_file_path = os.path.abspath(os.path.join(nav_to_package, 'CMakeLists.txt'))
 
-                        # check if the file exists
+                        #check for rclpy module
+                        nav_to_rclpy_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name, package_name)
+                        feature_filename = f"{feature_name}.py"
+                        feature_module_path = os.path.abspath(os.path.join(nav_to_rclpy_package, feature_filename))
+                        print(feature_module_path)
+
+                        # check if the CMakeLists.txt file exists
                         if os.path.exists(cml_file_path):
                             
                             with open(cml_file_path, "r") as f:
@@ -62,14 +68,24 @@ class LoadVerb(VerbExtension):
 
                             if load_result.returncode == 0:
                                 print(load_result.stdout)
+                                configurator.updateConfigModelSelection(feature_name, True)
                             elif load_result.returncode == 1:
                                 print(load_result.stderr)
 
                             print(f"{feature_name} loaded successfully.\n")
+
+                        #else if the rclpy module exists
+                        elif os.path.exists(feature_module_path):
+                            print(f"CMakeLists.txt file not found at: {cml_file_path}")
+                            print("Checking for rclpy package ..")
+
+                            #build class name from featurename
+                            #load python package of a separate thread
+                            class_name = ""
+                            self.load_rclpy_plugin(feature_name, class_name)
+                            
                         else:
-                            print(f"File not found at: {cml_file_path}")
-                            #is a python package
-                            #ad hoc method to build and add python nodes
+                            print(f"No exacutable package for the {feature_name} feature found.")
 
                 else:
                     print("Binding time not late. Cannot run this command at compile time")
@@ -77,9 +93,13 @@ class LoadVerb(VerbExtension):
             except subprocess.CalledProcessError as e:
                 print("Could not get live bindingTime value:")
                 print(e.stderr)
+
+    def load_rclpy_plugin(self, module_name, class_name):
+        pass
         
     def check_if_feature_exists(self, feature_name):
         return configurator.find_feature(feature_name)
+    
     
     def check_if_config_exists(self, name_target):
         cparsed = configurator.readConfigs()

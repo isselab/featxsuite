@@ -65,6 +65,7 @@ class UnloadVerb(VerbExtension):
 
                                     if unload_result.returncode == 0:
                                         print(unload_result.stdout)
+                                        configurator.updateConfigModelSelection(feature_name, False)
                                     else:
                                         print(unload_result.stderr)
 

@@ -141,4 +141,17 @@ class Configurator:
 
         self.traverseModel(all_features)
         print(f"\t--- ({self.issue_count}) issue(s) detected ---")
-    
+
+
+    def updateConfigModelSelection(self, feature_name, selection_status):
+        print("Updating configuration ...")
+        current_config =  self.readConfigs()
+        for config in current_config['configs']:
+            if config['name'] == feature_name:
+                config['isSelected'] = selection_status
+                configs_file_path = os.path.join(self.model_dir, "configs.json")
+                print(current_config)
+                with open(configs_file_path, "w") as f:
+                    json.dump(current_config, f, indent=4)
+                break
+        print("Configuration updated successfully")
