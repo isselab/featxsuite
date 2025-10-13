@@ -1,7 +1,4 @@
-import sys
-import subprocess
 from setuptools import find_packages, setup
-from setuptools.command.install import install
 
 package_name = 'featxcli'
 
@@ -38,6 +35,7 @@ setup(
     entry_points={
         'console_scripts': [
             'configurator = featxcli.configurator:main',
+            'plugin_registry = featxcli.plugin_registry:main',
         ],
         'ros2cli.command': [
             'featx = featxcli.command.featx:FeatxCommand',

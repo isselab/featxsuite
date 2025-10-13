@@ -1,6 +1,6 @@
 from ros2cli.verb import VerbExtension
 from featxcli.configurator import Configurator
-import subprocess
+import subprocess, re
 
 configurator = Configurator()
 
@@ -72,8 +72,23 @@ class UnloadVerb(VerbExtension):
                                     break #break out of for loop
 
                             if not found_as_component:
-                                pass
-                                #find in node list and do a manual stop
+                                package_name = configurator.get_parent(feature_name)
+                                module_name = f"{package_name}.{feature_name}"
+                                
+                                object_data = f"{{module_name: '{module_name}'}}"
+                                unload_py_plugin = subprocess.run(['ros2', 'service', 'call', '/unload_feature', 'featx_interfaces/srv/UnloadFeature', object_data],capture_output=True, text=True)
+
+                                if unload_py_plugin.returncode == 0:
+                                    match = re.search(r"message='([^']*)'", unload_py_plugin.stdout)
+                                    configurator.updateConfigModelSelection(feature_name, False)
+                                    if match:
+                                        message = match.group(1)
+                                        print(f"Service message: {message}")
+                                    else:
+                                        print("Message not found in response.")
+                                elif unload_py_plugin.returncode == 1:
+                                    print(unload_py_plugin.stderr)
+
 
                         elif comp_result.returncode == 1:
                             print(comp_result.stderr)

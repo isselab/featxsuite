@@ -150,7 +150,7 @@ class Configurator:
             if config['name'] == feature_name:
                 config['isSelected'] = selection_status
                 configs_file_path = os.path.join(self.model_dir, "configs.json")
-                print(current_config)
+    
                 with open(configs_file_path, "w") as f:
                     json.dump(current_config, f, indent=4)
                 break

@@ -46,7 +46,6 @@ class LoadVerb(VerbExtension):
                         nav_to_rclpy_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name, package_name)
                         feature_filename = f"{feature_name}.py"
                         feature_module_path = os.path.abspath(os.path.join(nav_to_rclpy_package, feature_filename))
-                        print(feature_module_path)
 
                         # check if the CMakeLists.txt file exists
                         if os.path.exists(cml_file_path):
@@ -78,11 +77,23 @@ class LoadVerb(VerbExtension):
                         elif os.path.exists(feature_module_path):
                             print(f"CMakeLists.txt file not found at: {cml_file_path}")
                             print("Checking for rclpy package ..")
-
-                            #build class name from featurename
+                            
                             #load python package of a separate thread
-                            class_name = ""
-                            self.load_rclpy_plugin(feature_name, class_name)
+                            module_name = f"{package_name}.{feature_name}"
+                            class_name = self.to_pascal_case(feature_name)
+                            object_data = f"{{module_name: '{module_name}', class_name: '{class_name}'}}"
+                            load_py_plugin = subprocess.run(['ros2', 'service', 'call', '/load_feature', 'featx_interfaces/srv/LoadFeature', object_data],capture_output=True, text=True)
+
+                            if load_py_plugin.returncode == 0:
+                                match = re.search(r"message='([^']*)'", load_py_plugin.stdout)
+                                configurator.updateConfigModelSelection(feature_name, True)
+                                if match:
+                                    message = match.group(1)
+                                    print(f"Service message: {message}")
+                                else:
+                                    print("Message not found in response.")
+                            elif load_py_plugin.returncode == 1:
+                                print(load_py_plugin.stderr)
                             
                         else:
                             print(f"No exacutable package for the {feature_name} feature found.")
@@ -94,8 +105,11 @@ class LoadVerb(VerbExtension):
                 print("Could not get live bindingTime value:")
                 print(e.stderr)
 
-    def load_rclpy_plugin(self, module_name, class_name):
-        pass
+
+    def to_pascal_case(self, name):
+        parts = re.split(r'[\s_-]+', name)
+        return ''.join(word.capitalize() for word in parts)
+        
         
     def check_if_feature_exists(self, feature_name):
         return configurator.find_feature(feature_name)

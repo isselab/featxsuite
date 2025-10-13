@@ -1,0 +1,5 @@
+string module_name
+string class_name
+---
+bool success
+string message
