@@ -76,7 +76,7 @@ class LoadVerb(VerbExtension):
                         #else if the rclpy module exists
                         elif os.path.exists(feature_module_path):
                             print(f"CMakeLists.txt file not found at: {cml_file_path}")
-                            print("Checking for rclpy package ..")
+                            print("Checking for rclpy package ...")
                             
                             #load python package of a separate thread
                             module_name = f"{package_name}.{feature_name}"

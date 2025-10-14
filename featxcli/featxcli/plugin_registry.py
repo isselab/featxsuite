@@ -53,6 +53,7 @@ class PluginRegistry(Node):
             response.message = str(e)
 
         return response
+    
 
     def unload_feature_callback(self, request, response):
         module_name = request.module_name
