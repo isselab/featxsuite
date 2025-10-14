@@ -1,5 +1,0 @@
-setuptools
-ros2cli
-
-[test]
-pytest
