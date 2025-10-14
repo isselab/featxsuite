@@ -13,5 +13,5 @@ featxbinder/build/
 featxbinder/install/
 featxbinder/log/
 
-*.egg-info/
+featxcli/featxcli.egg-info/
 
