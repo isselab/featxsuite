@@ -13,97 +13,102 @@ class LoadVerb(VerbExtension):
         parser.add_argument('-f', '--feature', type=str, required=True, help='Loading a configured feature into a configuration')
         
     def run_ros2_featx_load_command(self, feature_name):
-        configurator.checkRules()
+        conflicts = configurator.checkRules()
 
-        result = subprocess.run(["ros2", "node", "list"], capture_output=True, text=True)
-        nodes = result.stdout.strip().split('\n')
-        
-        if len(nodes) == 1 and nodes[0] == "":
-            print("Configuration is not running. Run ros2 featx start_config")
-        else:
-            try:
-                bt_command = ["ros2", "param", "get", "/featx_binder", "bindingTime"]
-                bt_result = subprocess.run(bt_command, capture_output=True, text=True, check=True)
-                bt_value = bt_result.stdout.split(":")[1].strip()
+        if conflicts == 0:
 
-                if bt_value == "Late":
-                    
-                    fmode = configurator.get_binding_mode(feature_name)
-                    ftime = configurator.get_binding_time(feature_name)
+            result = subprocess.run(["ros2", "node", "list"], capture_output=True, text=True)
+            nodes = result.stdout.strip().split('\n')
+            
+            if len(nodes) == 1 and nodes[0] == "":
+                print("Configuration is not running. Run ros2 featx start_config")
+            else:
+                try:
+                    bt_command = ["ros2", "param", "get", "/featx_binder", "bindingTime"]
+                    bt_result = subprocess.run(bt_command, capture_output=True, text=True, check=True)
+                    bt_value = bt_result.stdout.split(":")[1].strip()
 
-                    if fmode == "Static" and ftime == "Early":
-                        print("Warning: Cannot load a static early feature at runtime!")
-                    else:
-                        print(f"*** Loading feature: {feature_name}...***")
-                        package_name = configurator.get_parent(feature_name)
-                        pkg_share = get_package_share_directory(package_name)
+                    if bt_value == "Late":
                         
-                        #check for CMakeLists.txt file
-                        nav_to_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name)
-                        cml_file_path = os.path.abspath(os.path.join(nav_to_package, 'CMakeLists.txt'))
+                        fmode = configurator.get_binding_mode(feature_name)
+                        ftime = configurator.get_binding_time(feature_name)
 
-                        #check for rclpy module
-                        nav_to_rclpy_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name, package_name)
-                        feature_filename = f"{feature_name}.py"
-                        feature_module_path = os.path.abspath(os.path.join(nav_to_rclpy_package, feature_filename))
-
-                        # check if the CMakeLists.txt file exists
-                        if os.path.exists(cml_file_path):
-                            
-                            with open(cml_file_path, "r") as f:
-                                content = f.read()
-
-                            # Regular expression to match the target pattern
-                            pattern = r'rclcpp_components_register_nodes\s*\([^)]*?"([^"]+)"\)'
-
-                            match = re.search(pattern, content)
-                            if match:
-                                plugin_name = match.group(1)
-                            else:
-                                print("No registered component match found.")
-
-                            print(f"Loading plugin {plugin_name} in package {package_name}")
-                            load_result = subprocess.run(['ros2', 'component', 'load', '/featx_container', package_name, plugin_name],capture_output=True, text=True)
-
-                            if load_result.returncode == 0:
-                                print(load_result.stdout)
-                                configurator.updateConfigModelSelection(feature_name, True)
-                            elif load_result.returncode == 1:
-                                print(load_result.stderr)
-
-                            print(f"{feature_name} loaded successfully.\n")
-
-                        #else if the rclpy module exists
-                        elif os.path.exists(feature_module_path):
-                            print(f"CMakeLists.txt file not found at: {cml_file_path}")
-                            print("Checking for rclpy package ...")
-                            
-                            #load python package of a separate thread
-                            module_name = f"{package_name}.{feature_name}"
-                            class_name = self.to_pascal_case(feature_name)
-                            object_data = f"{{module_name: '{module_name}', class_name: '{class_name}'}}"
-                            load_py_plugin = subprocess.run(['ros2', 'service', 'call', '/load_feature', 'featx_interfaces/srv/LoadFeature', object_data],capture_output=True, text=True)
-
-                            if load_py_plugin.returncode == 0:
-                                match = re.search(r"message='([^']*)'", load_py_plugin.stdout)
-                                configurator.updateConfigModelSelection(feature_name, True)
-                                if match:
-                                    message = match.group(1)
-                                    print(f"Service message: {message}")
-                                else:
-                                    print("Message not found in response.")
-                            elif load_py_plugin.returncode == 1:
-                                print(load_py_plugin.stderr)
-                            
+                        if fmode == "Static" and ftime == "Early":
+                            print("Warning: Cannot load a static early feature at runtime!")
                         else:
-                            print(f"No exacutable package for the {feature_name} feature found.")
+                            print(f"*** Loading feature: {feature_name}...***")
+                            package_name = configurator.get_parent(feature_name)
+                            pkg_share = get_package_share_directory(package_name)
+                            
+                            #check for CMakeLists.txt file
+                            nav_to_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name)
+                            cml_file_path = os.path.abspath(os.path.join(nav_to_package, 'CMakeLists.txt'))
 
-                else:
-                    print("Binding time not late. Cannot run this command at compile time")
+                            #check for rclpy module
+                            nav_to_rclpy_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name, package_name)
+                            feature_filename = f"{feature_name}.py"
+                            feature_module_path = os.path.abspath(os.path.join(nav_to_rclpy_package, feature_filename))
 
-            except subprocess.CalledProcessError as e:
-                print("Could not get live bindingTime value:")
-                print(e.stderr)
+                            # check if the CMakeLists.txt file exists
+                            if os.path.exists(cml_file_path):
+                                
+                                with open(cml_file_path, "r") as f:
+                                    content = f.read()
+
+                                # Regular expression to match the target pattern
+                                pattern = r'rclcpp_components_register_nodes\s*\([^)]*?"([^"]+)"\)'
+
+                                match = re.search(pattern, content)
+                                if match:
+                                    plugin_name = match.group(1)
+                                else:
+                                    print("No registered component match found.")
+
+                                print(f"Loading plugin {plugin_name} in package {package_name}")
+                                load_result = subprocess.run(['ros2', 'component', 'load', '/featx_container', package_name, plugin_name],capture_output=True, text=True)
+
+                                if load_result.returncode == 0:
+                                    print(load_result.stdout)
+                                    configurator.updateConfigModelSelection(feature_name, True)
+                                elif load_result.returncode == 1:
+                                    print(load_result.stderr)
+
+                                print(f"{feature_name} loaded successfully.\n")
+
+                            #else if the rclpy module exists
+                            elif os.path.exists(feature_module_path):
+                                print(f"CMakeLists.txt file not found at: {cml_file_path}")
+                                print("Checking for rclpy package ...")
+                                
+                                #load python package of a separate thread
+                                module_name = f"{package_name}.{feature_name}"
+                                class_name = self.to_pascal_case(feature_name)
+                                object_data = f"{{module_name: '{module_name}', class_name: '{class_name}'}}"
+                                load_py_plugin = subprocess.run(['ros2', 'service', 'call', '/load_feature', 'featx_interfaces/srv/LoadFeature', object_data],capture_output=True, text=True)
+
+                                if load_py_plugin.returncode == 0:
+                                    match = re.search(r"message='([^']*)'", load_py_plugin.stdout)
+                                    configurator.updateConfigModelSelection(feature_name, True)
+                                    if match:
+                                        message = match.group(1)
+                                        print(f"Service message: {message}")
+                                    else:
+                                        print("Message not found in response.")
+                                elif load_py_plugin.returncode == 1:
+                                    print(load_py_plugin.stderr)
+                                
+                            else:
+                                print(f"No exacutable package for the {feature_name} feature found.")
+
+                    else:
+                        print("Binding time not late. Cannot run this command at compile time")
+
+                except subprocess.CalledProcessError as e:
+                    print("Could not get live bindingTime value:")
+                    print(e.stderr)
+
+        else:
+            print("Fix issue(s), build and rerun the command again")
 
 
     def to_pascal_case(self, name):

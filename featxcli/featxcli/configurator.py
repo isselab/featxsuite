@@ -141,7 +141,7 @@ class Configurator:
 
         self.traverseModel(all_features)
         print(f"\t--- ({self.issue_count}) issue(s) detected ---")
-
+        return self.issue_count
 
     def updateConfigModelSelection(self, feature_name, selection_status):
         print("Updating configuration ...")
