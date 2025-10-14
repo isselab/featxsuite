@@ -3,6 +3,9 @@ __pycache__
 # VSCode
 .vscode
 
+#README
+README.md
+
 featxcli/.vscode
 featxcli/.pytest_cache
 
