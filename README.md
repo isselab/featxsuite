@@ -9,3 +9,4 @@ This work presents a novel technique to load and unload robot features to and fr
 `featx_interfaces`: makes provision for rclpy plugins 
 
 ## Documentation
+https://github.com/JGyimah/featxsuite/blob/main/documentation.pdf
