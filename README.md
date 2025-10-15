@@ -6,7 +6,7 @@ This work presents a novel technique to load and unload robot features to and fr
 
 `featxbinder`: rclcpp module responsible for managing manual and plugin compositions
 
-`featx_interfaces`: makes provision for rclpy plugins 
+`featx_interfaces`: custom rclpy infrastructure that makes provision for rclpy plugins via services 
 
 ## Documentation
 https://github.com/JGyimah/featxsuite/blob/main/documentation.pdf
