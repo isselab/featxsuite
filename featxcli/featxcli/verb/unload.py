@@ -29,11 +29,11 @@ class UnloadVerb(VerbExtension):
 
                     if bt_value == "Late":
                         #run unload command
-                        #cannot unload static feature
                         fmode = configurator.get_binding_mode(feature_name)
 
                         if fmode == "Static":
                             print("Warning: Cannot unload a static feature at runtime!")
+                            
                         else:
                             print(f"*** Unloading feature: {feature_name}...***")
 

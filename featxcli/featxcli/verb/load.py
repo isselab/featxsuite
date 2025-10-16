@@ -22,6 +22,7 @@ class LoadVerb(VerbExtension):
             
             if len(nodes) == 1 and nodes[0] == "":
                 print("Configuration is not running. Run ros2 featx start_config")
+                
             else:
                 try:
                     bt_command = ["ros2", "param", "get", "/featx_binder", "bindingTime"]
@@ -42,6 +43,12 @@ class LoadVerb(VerbExtension):
                             
                             #check for CMakeLists.txt file
                             nav_to_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', 'packages', package_name)
+
+                            #confirm package existence
+                            if not os.path.exists(nav_to_package) or not os.path.isdir(nav_to_package):
+                                print(f"Package {package_name} that should contain {feature_name} doesnot exists!")
+                                return
+
                             cml_file_path = os.path.abspath(os.path.join(nav_to_package, 'CMakeLists.txt'))
 
                             #check for rclpy module
@@ -98,7 +105,7 @@ class LoadVerb(VerbExtension):
                                     print(load_py_plugin.stderr)
                                 
                             else:
-                                print(f"No exacutable package for the {feature_name} feature found.")
+                                print(f"No rclcpp or rclpy package for the {feature_name} feature found.")
 
                     else:
                         print("Binding time not late. Cannot run this command at compile time")
