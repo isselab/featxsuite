@@ -1,12 +1,10 @@
-```
-                                         ___               _    _    _ 
-                                        (  _`\            ( )_ ( )  ( )
-                                        | (_(_)__     _ _ | ,_)`\`\/'/'
-                                        |  _)/'__`\ /'_` )| |    >  <  
-                                        | | (  ___/( (_| || |_  /'/\`\ 
-                                        (_) `\____)`\__,_)`\__)(_)  (_)                                                                          
-                         
-```
+  ```
+ _____          _  __  __     ____        _ _       
+|  ___|__  __ _| |_\ \/ /    / ___| _   _(_) |_ ___ 
+| |_ / _ \/ _` | __|\  /     \___ \| | | | | __/ _ \
+|  _|  __/ (_| | |_ /  \      ___) | |_| | | ||  __/
+|_|  \___|\__,_|\__/_/\_\    |____/ \__,_|_|\__\___|                                                                
+ ```
 
 This work presents a novel technique to load and unload robot features to and from a configuration. It extends the concept of feature models to support flexible feature binding. This is achieved by combining time and mode bindings to deliver a robust mechanism for managing variability in such systems. This technique is delivered via a domain-specific language that can be used to define features and bind them according to the user's prefereed time and mode bindings. The configuration and reconfiguration process is managed by a configurator tool, with the entire implementation integrated via the ros2cli. We evaluated our tool with case studies drawn from a simulated warehouse scenario.
 
