@@ -1,0 +1,2 @@
+#define NAV2_MAP_SERVER 1
+#define RTABMAP_ROS 0

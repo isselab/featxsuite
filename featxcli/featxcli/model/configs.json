@@ -1,0 +1,33 @@
+{
+    "configs":[
+        {
+            "name": "approach_service_server",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "nav2_amcl",
+            "isSelected": true,
+            "bindingTime": "Late",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "move_shelf_to_ship",
+            "isSelected": true,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "cartographer_slam",
+            "isSelected": true,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "nav2_map_server",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        }]
+}

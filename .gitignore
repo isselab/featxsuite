@@ -1,0 +1,17 @@
+__pycache__
+
+# VSCode
+.vscode
+
+#README
+README.md
+
+featxcli/.vscode
+featxcli/.pytest_cache
+
+featxbinder/build/
+featxbinder/install/
+featxbinder/log/
+
+featxcli/featxcli.egg-info/
+
