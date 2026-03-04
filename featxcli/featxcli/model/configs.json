@@ -1,33 +1,99 @@
 {
     "configs":[
         {
-            "name": "approach_service_server",
+            "name": "navigation",
             "isSelected": true,
             "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "to_loading",
+            "isSelected": false,
+            "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
         {
-            "name": "nav2_amcl",
+            "name": "to_delivery",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "to_base",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "elevator",
             "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+        {
+            "name": "lift",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+        {
+            "name": "drop",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+           {
+            "name": "footprint",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+           {
+            "name": "circular",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+           {
+            "name": "square",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+           {
+            "name": "shelf",
+            "isSelected": true,
+            "bindingTime": "Early",
+            "bindingMode": "Static"
+        },
+           {
+            "name": "attach",
+            "isSelected": false,
+            "bindingTime": "Late",
+            "bindingMode": "Dynamic"
+        },
+           {
+            "name": "init_checks",
+            "isSelected": false,
             "bindingTime": "Late",
             "bindingMode": "Static"
         },
         {
-            "name": "move_shelf_to_ship",
-            "isSelected": true,
+            "name": "localization",
+            "isSelected": false,
             "bindingTime": "Late",
-            "bindingMode": "Dynamic"
+            "bindingMode": "Static"
         },
         {
-            "name": "cartographer_slam",
-            "isSelected": true,
+            "name": "pose",
+            "isSelected": false,
             "bindingTime": "Late",
-            "bindingMode": "Dynamic"
+            "bindingMode": "Static"
         },
         {
-            "name": "nav2_map_server",
-            "isSelected": true,
-            "bindingTime": "Early",
+            "name": "boot",
+            "isSelected": false,
+            "bindingTime": "Late",
             "bindingMode": "Static"
         }]
 }

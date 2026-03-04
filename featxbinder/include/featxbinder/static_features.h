@@ -1,2 +1,4 @@
-#define NAV2_MAP_SERVER 1
-#define RTABMAP_ROS 0
+#define NAVIGATION 1
+#define ELEVATOR 1
+#define FOOTPRINT 1
+#define SHELF 1

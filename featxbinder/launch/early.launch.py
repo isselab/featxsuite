@@ -26,6 +26,9 @@ def generate_launch_description():
     return LaunchDescription([
     container,
     #add all static features to be loaded early here.
-    Node(package='mapping', executable='mapping'),
+    Node(package='navigation', executable='navigation'),
+    Node(package='elevator', executable='elevator'),
+    Node(package='footprint', executable='footprint'),
+    Node(package='shelf', executable='shelf'),
     Node(package='featxcli', executable='plugin_registry') #donot remove this
  ])

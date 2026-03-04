@@ -8,8 +8,10 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
 from featxcli.configurator import Configurator
+from rclpy.logging import get_logger
 
 configurator = Configurator()
+logger = get_logger('start_config')
 
 
 class StartConfigVerb(VerbExtension):
@@ -19,8 +21,7 @@ class StartConfigVerb(VerbExtension):
         pass
 
     def run_ros2_featx_start_config_command(self):
-        print("Launching early features that are selected...")
-       
+        logger.info("Launching early features that are selected...")
 
         pkg_share = get_package_share_directory('featxbinder')
         launch_file_path = os.path.join(pkg_share, 'launch', 'early.launch.py')
@@ -44,5 +45,5 @@ class StartConfigVerb(VerbExtension):
             param = Parameter("bindingTime", Parameter.Type.STRING, "Late")
             node.set_parameters([param])
         else:
-            print("Fix issue(s), build and rerun the command again")
+            logger.info("Fix issue(s), build and rerun the command again")
 

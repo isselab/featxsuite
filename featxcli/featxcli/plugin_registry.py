@@ -13,6 +13,7 @@ class PluginRegistry(Node):
         # ROS services
         self.load_srv = self.create_service(LoadFeature, 'load_feature', self.load_feature_callback)
         self.unload_srv = self.create_service(UnloadFeature, 'unload_feature', self.unload_feature_callback)
+        self.get_logger().info('Python plugin registry activated')
 
     def load_feature_callback(self, request, response):
         module_name = request.module_name
@@ -24,6 +25,7 @@ class PluginRegistry(Node):
                 self.get_logger().info(msg)
                 response.success = True
                 response.message = msg
+                self.get_logger().info(msg)
                 return response
 
             if module_name in sys.modules:
@@ -42,7 +44,7 @@ class PluginRegistry(Node):
                 "instance": plugin_instance,
             }
 
-            self.get_logger().info(f"Loaded {module_name}.{class_name}")
+            self.get_logger().info(f"Loaded {module_name}.{class_name} successfully")
             response.success = True
             response.message = f"Loaded {module_name}.{class_name} successfully"
 

@@ -2,84 +2,7 @@
     "name":"root",
     "sub":[
         {
-            "name":"attach_service",
-            "isOptional": false,
-            "includes":"move_shelf_to_ship",
-            "excludes":"",
-            "bindingTimeAllowed": "Early",
-            "bindingModeAllowed": "Static",
-            "sub":[
-                {
-                    "name":"approach_service_server",
-                    "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
-                    "bindingTimeAllowed": "Early",
-                    "bindingModeAllowed": "Dynamic"
-                }]
-        },
-        {
-            "name":"localisation_server",
-            "isOptional": false,
-            "includes":"mapping",
-            "excludes":"",
-            "bindingTimeAllowed": "Early",
-            "bindingModeAllowed": "Static",
-            "sub":[
-                {
-                    "name":"nav2_amcl",
-                    "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
-                    "bindingTimeAllowed": "Late",
-                    "bindingModeAllowed": "Static"
-                }]
-        },
-        {
             "name":"navigation",
-            "isOptional": false,
-            "includes":"localisation_server",
-            "excludes":"",
-            "bindingTimeAllowed": "Early",
-            "bindingModeAllowed": "Static",
-            "sub":[
-                {
-                    "name":"nav2_apps",
-                    "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
-                    "bindingTimeAllowed": "Early",
-                    "bindingModeAllowed": "Static",
-                    "sub":[
-                        {
-                            "name":"move_shelf_to_ship",
-                            "isOptional": false,
-                            "includes":"",
-                            "excludes":"",
-                            "bindingTimeAllowed": "Late",
-                            "bindingModeAllowed": "Dynamic"
-                        }]
-                }]
-        },
-        {
-            "name":"slam",
-            "isOptional": false,
-            "includes":"mapping",
-            "excludes":"",
-            "bindingTimeAllowed": "Early",
-            "bindingModeAllowed": "Static",
-            "sub":[
-                {
-                    "name":"cartographer_slam",
-                    "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
-                    "bindingTimeAllowed": "Late",
-                    "bindingModeAllowed": "Dynamic"
-                }]
-        },
-        {
-            "name":"mapping",
             "isOptional": false,
             "includes":"",
             "excludes":"",
@@ -87,12 +10,132 @@
             "bindingModeAllowed": "Static",
             "sub":[
                 {
-                    "name":"nav2_map_server",
+                    "name":"to_loading",
+                    "isOptional": false,
+                    "includes":["square", "attach", "lift"],
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                },
+                {
+                    "name":"to_delivery",
+                    "isOptional": false,
+                    "includes":["circular", "drop"],
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                },
+                {
+                    "name":"to_base",
                     "isOptional": false,
                     "includes":"",
                     "excludes":"",
-                    "bindingTimeAllowed": "Early",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                }
+            ]
+        },
+        {
+            "name":"elevator",
+            "isOptional": false,
+            "includes":"",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"lift",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                },
+                {
+                    "name":"drop",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                }
+            ]
+        },
+        {
+            "name":"footprint",
+            "isOptional": false,
+            "includes":"",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"circular",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                },
+                {
+                    "name":"square",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                }
+            ]
+        },
+        {
+            "name":"shelf",
+            "isOptional": false,
+            "includes":"",
+            "excludes":"",
+            "bindingTimeAllowed": "Early",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"attach",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
+                    "bindingModeAllowed": "Dynamic"
+                }]
+        },
+        {
+            "name":"init_checks",
+            "isOptional": false,
+            "includes":["boot", "localization", "pose"],
+            "excludes":"",
+            "bindingTimeAllowed": "Late",
+            "bindingModeAllowed": "Static"
+        },
+        {
+            "name":"localization",
+            "isOptional": false,
+            "includes":"",
+            "excludes":"",
+            "bindingTimeAllowed": "Late",
+            "bindingModeAllowed": "Static",
+            "sub":[
+                {
+                    "name":"pose",
+                    "isOptional": false,
+                    "includes":"",
+                    "excludes":"",
+                    "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Static"
                 }]
-        }]
+        },
+        {
+            "name":"boot",
+            "isOptional": false,
+            "includes":"",
+            "excludes":"",
+            "bindingTimeAllowed": "Late",
+            "bindingModeAllowed": "Static"
+        }
+    ]
 }
