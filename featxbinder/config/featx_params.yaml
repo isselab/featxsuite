@@ -1,3 +1,4 @@
 featx_binder:
   ros__parameters:
     bindingTime: "Early"
+    system_name: "packages"
