@@ -1,0 +1,17 @@
+feature_model: RB-1-BASE
+    xor navigation ?: static early
+        to_loading : dynamic late
+        to_delivery : dynamic late
+        to_base : dynamic late
+    xor elevator ?: static early
+        lift : dynamic late
+        drop : dynamic late
+    xor footprint ?: static early
+        circular : dynamic late
+        square : dynamic late
+    shelf ?: static early
+        attach ?: dynamic late
+    init_checks : static late
+    localization : static late
+        pose : static late
+    boot : static late

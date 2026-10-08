@@ -4,6 +4,7 @@ import subprocess, os, re
 from ament_index_python.packages import get_package_share_directory
 from rclpy.logging import get_logger
 from featxcli.executor_list import EXECUTOR_LIST
+from featxcli.containers import CPP_CONTAINER, find_component_id
 
 
 configurator = Configurator()
@@ -42,13 +43,15 @@ class LoadVerb(VerbExtension):
                         ftime = configurator.get_binding_time(feature_name)
 
                         if fmode == "Static" and ftime == "Early":
-                        
-                            component_found = self.check_running_component_list(feature_name)
-                            node_found = self. check_running_node_list(feature_name)
 
-                            if component_found == "no" and node_found == "no":
-                                logger.info(f"Warning: Cannot load a static early feature({feature_name}) at runtime!")  
-                            
+                            already_bound = (find_component_id(CPP_CONTAINER, feature_name) is not None
+                                             or self.check_running_node_list(feature_name) == "yes")
+
+                            if already_bound:
+                                logger.info(f"The feature {feature_name} you are attempting to select has been bound static and loaded at compile time.")
+                            else:
+                                logger.info(f"Warning: Cannot load a static early feature({feature_name}) at runtime!")
+
                         else:
                             logger.info(f"*** Loading feature: {feature_name}...***")
 
@@ -100,7 +103,7 @@ class LoadVerb(VerbExtension):
                                     logger.info(f"FeatX plugin {feature_name} has already been loaded")
                                 else:
                                     logger.info(f"Loading plugin {plugin_name} in package {package_name}")
-                                    load_result = subprocess.run(['ros2', 'component', 'load', '/featx_container', package_name, plugin_name],capture_output=True, text=True)
+                                    load_result = subprocess.run(['ros2', 'component', 'load', CPP_CONTAINER, package_name, plugin_name],capture_output=True, text=True)
 
                                     if load_result.returncode == 0:
                                         logger.info(load_result.stdout)
@@ -115,24 +118,19 @@ class LoadVerb(VerbExtension):
                             elif os.path.exists(feature_module_path):
                                 logger.info(f"CMakeLists.txt file not found at: {cml_file_path}")
                                 logger.info("Checking for rclpy package ...")
-                                
+
                                 #load python package of a separate thread
                                 module_name = f"{package_name}.{feature_name}"
                                 class_name = self.to_pascal_case(feature_name)
                                 object_data = f"{{module_name: '{module_name}', class_name: '{class_name}'}}"
                                 load_py_plugin = subprocess.run(['ros2', 'service', 'call', '/load_feature', 'featx_interfaces/srv/LoadFeature', object_data],capture_output=True, text=True)
 
-                                if load_py_plugin.returncode == 0:
-                                    match = re.search(r"message='([^']*)'", load_py_plugin.stdout)
+                                success, message = self.read_service_response(load_py_plugin)
+                                logger.info(f"Service message: {message}")
+
+                                if success:
                                     configurator.updateConfigModelSelection(feature_name, True)
-                                    if match:
-                                        message = match.group(1)
-                                        logger.info(f"Service message: {message}")
-                                    else:
-                                        logger.info("Message not found in response.")
-                                elif load_py_plugin.returncode == 1:
-                                    logger.info(load_py_plugin.stderr)
-                                
+
                             else:
                                 logger.info(f"No rclcpp or rclpy package for the {feature_name} feature found.")
 
@@ -146,35 +144,17 @@ class LoadVerb(VerbExtension):
         else:
             logger.info("Fix issue(s), build and rerun the command again")
 
-    def check_running_component_list(self, feature_name):
-        comp_result = subprocess.run(["ros2", "component", "list"], capture_output=True, text=True)
+    def read_service_response(self, completed):
+        #ros2 service call exits 0 even when the service itself reports failure
+        if completed.returncode != 0:
+            return False, completed.stderr.strip()
 
-        if comp_result.returncode == 0:
-            containers = {}
-            current_container = None
-            for line in comp_result.stdout.splitlines():
-                if not line.startswith(" ") and line.strip() == "/featx_container":
-                    logger.info(f"checking running component container {line.strip()}")
-                    current_container = line.strip()
-                    containers[current_container] = []
+        success = re.search(r"success=(True|False)", completed.stdout)
+        message = re.search(r"message='([^']*)'", completed.stdout)
 
-                if line.startswith(" ") and current_container == "/featx_container":
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        component_id = parts[0]
-                        component_name = " ".join(parts[1:])
-                        containers[current_container].append((component_id, component_name))
+        return (success is not None and success.group(1) == "True",
+                message.group(1) if message else "no message in response")
 
-            for comp_id, name in containers[current_container]:
-                if feature_name == parts[1:]:
-                    logger.info(f"Found! ID: {comp_id}, Name: {name}")
-                    logger.info(f"The feature {name} you are attempting to select has been bound static and loaded at compile time.")
-                    return "yes"
-                
-        return "no"
-            
-            
-        
     def check_running_node_list(self, feature_name):
         result = subprocess.run(["ros2", "node", "list"], capture_output=True, text=True)
         output = result.stdout

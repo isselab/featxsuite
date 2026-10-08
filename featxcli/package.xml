@@ -9,6 +9,7 @@
 
   <buildtool_depend>ament_python</buildtool_depend>
   <depend>featx_interfaces</depend>
+  <depend>composition_interfaces</depend>
   <exec_depend>ros2cli</exec_depend>
   <exec_depend>setuptools</exec_depend>
 

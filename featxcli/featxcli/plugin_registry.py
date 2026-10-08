@@ -3,6 +3,7 @@ import rclpy
 import importlib
 import traceback
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from featx_interfaces.srv import LoadFeature, UnloadFeature
 
 class PluginRegistry(Node):
@@ -37,6 +38,11 @@ class PluginRegistry(Node):
 
             plugin_class = getattr(plugin_module, class_name)
             plugin_instance = plugin_class()
+
+            # without this the node is created but never spun, so none of its
+            # timers, subscriptions or services ever fire
+            if isinstance(plugin_instance, Node):
+                self.executor.add_node(plugin_instance)
 
             self.loaded_plugins[module_name] = {
                 "module": plugin_module,
@@ -73,6 +79,7 @@ class PluginRegistry(Node):
         #destroy the ROS node if it's a Node subclass
         if isinstance(instance, Node):
             self.get_logger().info(f"Destroying node for {module_name}")
+            self.executor.remove_node(instance)
             instance.destroy_node()
 
         #remove module from sys.modules to allow reloads
@@ -88,8 +95,13 @@ class PluginRegistry(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = PluginRegistry()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    try:
+        executor.spin()
+    finally:
+        executor.shutdown()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

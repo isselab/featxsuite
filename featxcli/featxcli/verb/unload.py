@@ -2,9 +2,11 @@ from ros2cli.verb import VerbExtension
 from featxcli.configurator import Configurator
 import subprocess, re
 from rclpy.logging import get_logger
+from featxcli.containers import CPP_CONTAINER, find_component_id
 
 configurator = Configurator()
 logger = get_logger('unload')
+ILIB_PLUGINS_EXECUTOR_PKG = 'py_plugin_executor'
 
 
 class UnloadVerb(VerbExtension):
@@ -64,93 +66,56 @@ class UnloadVerb(VerbExtension):
         else:
             logger.info("Fix issue(s), build and rerun the command again")
 
+    def call_unload_service(self, module_name):
+        object_data = f"{{module_name: '{module_name}'}}"
+        completed = subprocess.run(['ros2', 'service', 'call', '/unload_feature', 'featx_interfaces/srv/UnloadFeature', object_data],capture_output=True, text=True)
+
+        #ros2 service call exits 0 even when the service itself reports failure
+        if completed.returncode != 0:
+            return False, completed.stderr.strip()
+
+        success = re.search(r"success=(True|False)", completed.stdout)
+        message = re.search(r"message='([^']*)'", completed.stdout)
+
+        return (success is not None and success.group(1) == "True",
+                message.group(1) if message else "no message in response")
+
     def shut_node_down(self, feature_name):
         logger.info(f"*** Unloading feature: {feature_name}...***")
 
-        #check component list
-        comp_result = subprocess.run(["ros2", "component", "list"], capture_output=True, text=True)
+        comp_id = find_component_id(CPP_CONTAINER, feature_name)
 
-        if comp_result.returncode == 0:
-            containers = {}
-            current_container = None
-            for line in comp_result.stdout.splitlines():
-                if not line.startswith(" ") and line.strip() == "/featx_container":
-                    logger.info("checking featx_container")
-                    current_container = line.strip()
-                    containers[current_container] = []
+        if comp_id is not None:
+            unload_result = subprocess.run(["ros2", "component", "unload", CPP_CONTAINER, comp_id], capture_output=True, text=True)
 
-                if line.startswith(" ") and current_container == "/featx_container":
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        component_id = parts[0]
-                        component_name = " ".join(parts[1:])
-                        containers[current_container].append((component_id, component_name))
-            
-            found_as_component = False
+            if unload_result.returncode == 0:
+                logger.info(unload_result.stdout.strip())
+                configurator.updateConfigModelSelection(feature_name, False)
+                logger.info(f"{feature_name} unloaded successfully.")
+            else:
+                logger.info(unload_result.stderr.strip())
 
-            for comp_id, name in containers[current_container]:
-                if f"/{feature_name}" == name:
-                    logger.info(f"Found! ID: {comp_id}, Name: {name}")
-                    found_as_component = True
-                    #run unload command
-                    unload_result = subprocess.run(["ros2", "component", "unload", "/featx_container", comp_id], capture_output=True, text=True)
+            return
 
-                    if unload_result.returncode == 0:
-                        logger.info(unload_result.stdout)
-                        configurator.updateConfigModelSelection(feature_name, False)
-                    else:
-                        logger.info(unload_result.stderr)
+        #not an rclcpp component, so ask the rclpy plugin registry
+        package_name = configurator.get_parent(feature_name)
 
-                    break #break out of for loop
+        if package_name == "root":
+            package_name = ILIB_PLUGINS_EXECUTOR_PKG
 
-            if not found_as_component:
-                #unload in reverse: includes turned off before main
-                package_name = configurator.get_parent(feature_name)
+        #a feature's module sits either in py_plugin_executor or in a package of its own name
+        for module_name in (f"{package_name}.{feature_name}", f"{feature_name}.{feature_name}"):
+            logger.info(f"Check if module exists at: {module_name}")
+            success, message = self.call_unload_service(module_name)
+            logger.info(f"Service message: {message}")
 
-                if package_name == "root":
-                    #check py_plugin_executor
-                    package_name = "py_plugin_executor"
-                    module_name = f"{package_name}.{feature_name}"
-                    logger.info(f"Check if module exists at: {module_name}")
-                else:
-                    module_name = f"{package_name}.{feature_name}"
-                    logger.info(f"Check if module exists at: {module_name}")
-                
-                object_data = f"{{module_name: '{module_name}'}}"
-                unload_py_plugin = subprocess.run(['ros2', 'service', 'call', '/unload_feature', 'featx_interfaces/srv/UnloadFeature', object_data],capture_output=True, text=True)
+            if success:
+                configurator.updateConfigModelSelection(feature_name, False)
+                logger.info(f"{feature_name} unloaded successfully.")
+                return
 
-                if unload_py_plugin.returncode == 0:
-                    match = re.search(r"message='([^']*)'", unload_py_plugin.stdout)
-                    configurator.updateConfigModelSelection(feature_name, False)
-                    if match:
-                        message = match.group(1)
-                        logger.info(f"Service message: {message}")
-                    else:
-                        logger.info("Message not found in response.")
-                elif unload_py_plugin.returncode == 1:
-                    logger.info(unload_py_plugin.stderr)
-                    #check same name package
-                    module_name = f"{feature_name}.{feature_name}"
-                    logger.info(f"Check if module exists at: {module_name}")
-                    unload_py_plugin_same_dir = subprocess.run(['ros2', 'service', 'call', '/unload_feature', 'featx_interfaces/srv/UnloadFeature', object_data],capture_output=True, text=True)
+        logger.info(f"{feature_name} could not be unloaded as a component or an rclpy plugin")
 
-                    if unload_py_plugin_same_dir.returncode == 0:
-                        match = re.search(r"message='([^']*)'", unload_py_plugin_same_dir.stdout)
-                        configurator.updateConfigModelSelection(feature_name, False)
-                        if match:
-                            message = match.group(1)
-                            logger.info(f"Service message: {message}")
-                        else:
-                            logger.info("Message not found in response.")
-                    elif unload_py_plugin_same_dir.returncode == 1:
-                        logger.info(unload_py_plugin.stderr)
-
-
-        elif comp_result.returncode == 1:
-            logger.info(comp_result.stderr)
-
-        logger.info(f"{feature_name} unloaded successfully.")
-            
 
     def check_if_feature_exists(self, feature_name):
         return configurator.find_feature(feature_name)
