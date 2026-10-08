@@ -3,7 +3,7 @@ feature_config:
     to_loading : dynamic late
     to_delivery : dynamic late
     to_base : dynamic late
-    xor elevator ?: static early
+    elevator *: static early
     lift : dynamic late
     drop : dynamic late
     footprint *: static early

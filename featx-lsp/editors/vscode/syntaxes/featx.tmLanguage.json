@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "FeatX",
+  "scopeName": "source.featx",
+  "patterns": [
+    { "include": "#header" },
+    { "include": "#entry" }
+  ],
+  "repository": {
+    "header": {
+      "match": "^\\s*(feature_model|feature_config)\\s*(:)\\s*([\\w.-]+)?",
+      "captures": {
+        "1": { "name": "keyword.control.featx" },
+        "2": { "name": "punctuation.separator.key-value.featx" },
+        "3": { "name": "entity.name.type.featx" }
+      }
+    },
+    "entry": {
+      "match": "^\\s*(?:(or|xor)\\s+)?([\\w.-]+)\\s*([?*])?\\s*(:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "keyword.operator.grouping.featx" },
+        "2": { "name": "entity.name.function.featx" },
+        "3": { "name": "keyword.operator.marker.featx" },
+        "4": { "name": "punctuation.separator.key-value.featx" },
+        "5": { "patterns": [{ "include": "#binding" }] }
+      }
+    },
+    "binding": {
+      "patterns": [
+        {
+          "match": "\\b(static|dynamic)\\b",
+          "name": "support.type.binding-mode.featx"
+        },
+        {
+          "match": "\\b(early|late)\\b",
+          "name": "support.constant.binding-time.featx"
+        },
+        {
+          "match": "\\S+",
+          "name": "invalid.illegal.binding.featx"
+        }
+      ]
+    }
+  }
+}
