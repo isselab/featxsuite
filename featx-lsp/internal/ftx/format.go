@@ -108,7 +108,10 @@ func writeModelTail(sb *strings.Builder, ft *Feature) {
 		sb.WriteString(" {" + ft.Mode.String() + " " + ft.Time.String() + "}")
 	}
 	if ft.HasDefault {
-		sb.WriteString(" (" + ft.Default + ")")
+		sb.WriteString(" (" + ft.DefaultText() + ")")
+	}
+	if v := ft.ValidatorText(); v != "" {
+		sb.WriteString(" " + v)
 	}
 	if ft.Optional {
 		sb.WriteString(" ?")
@@ -138,6 +141,6 @@ func writeConfigTail(sb *strings.Builder, ft *Feature) {
 		if ft.HasBindings {
 			sb.WriteByte(' ')
 		}
-		sb.WriteString("(" + ft.Default + ")")
+		sb.WriteString("(" + ft.DefaultText() + ")")
 	}
 }

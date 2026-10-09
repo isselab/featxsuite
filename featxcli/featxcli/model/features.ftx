@@ -1,6 +1,6 @@
 RB-1-BASE:
     xor navigation : node {static early} ?
-        vel_max : number (1.6)
+        vel_max : double (1.6) <0.0, 3.0>
         to_loading : node {dynamic late}
             [square && attach && lift]
         to_delivery : node {dynamic late}

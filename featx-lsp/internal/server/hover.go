@@ -138,7 +138,7 @@ func facts(kind ftx.Kind, feature *ftx.Feature) []string {
 		if kind == ftx.KindConfig {
 			label = "value"
 		}
-		out = append(out, fmt.Sprintf("%s: `%s`", label, feature.Default))
+		out = append(out, fmt.Sprintf("%s: `%s`", label, feature.DefaultText()))
 	}
 
 	// A value feature without bindings of its own is bound with its node.

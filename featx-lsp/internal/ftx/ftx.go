@@ -28,7 +28,10 @@
 // Nesting is expressed with indentation in both dialects.
 package ftx
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // tabWidth is the column width a tab is counted as when measuring indentation.
 const tabWidth = 4
@@ -64,29 +67,107 @@ type Type int
 const (
 	TypeUnset Type = iota
 	TypeNode
-	TypeNumber
-	TypeString
 	TypeBool
+	TypeInt
+	TypeDouble
+	TypeString
+	TypeBoolArray
+	TypeIntArray
+	TypeDoubleArray
+	TypeStringArray
 )
 
-func (t Type) String() string {
-	switch t {
-	case TypeNode:
-		return "node"
-	case TypeNumber:
-		return "number"
-	case TypeString:
-		return "string"
-	case TypeBool:
-		return "bool"
-	default:
-		return ""
-	}
+// typeNames is the surface spelling of each type, which is also the spelling
+// generate_parameter_library uses, so no translation is needed when emitting.
+var typeNames = map[Type]string{
+	TypeNode:        "node",
+	TypeBool:        "bool",
+	TypeInt:         "int",
+	TypeDouble:      "double",
+	TypeString:      "string",
+	TypeBoolArray:   "bool_array",
+	TypeIntArray:    "int_array",
+	TypeDoubleArray: "double_array",
+	TypeStringArray: "string_array",
 }
+
+func (t Type) String() string { return typeNames[t] }
 
 // IsValue reports whether the type carries a value rather than behaviour.
 func (t Type) IsValue() bool {
-	return t == TypeNumber || t == TypeString || t == TypeBool
+	return t != TypeUnset && t != TypeNode
+}
+
+// IsArray reports whether the type holds a list of values.
+func (t Type) IsArray() bool {
+	switch t {
+	case TypeBoolArray, TypeIntArray, TypeDoubleArray, TypeStringArray:
+		return true
+	}
+	return false
+}
+
+// IsNumeric reports whether the type can be compared against bounds.
+func (t Type) IsNumeric() bool {
+	switch t {
+	case TypeInt, TypeDouble, TypeIntArray, TypeDoubleArray:
+		return true
+	}
+	return false
+}
+
+// Element is the scalar type an array holds, or the type itself when it is
+// already scalar.
+func (t Type) Element() Type {
+	switch t {
+	case TypeBoolArray:
+		return TypeBool
+	case TypeIntArray:
+		return TypeInt
+	case TypeDoubleArray:
+		return TypeDouble
+	case TypeStringArray:
+		return TypeString
+	}
+	return t
+}
+
+// ValidatorKind is the constraint a parameter places on its own value. The
+// surface forms are angle brackets after the value:
+//
+//	<lo, hi>    bounds        both ends given
+//	<lo, #>     gt_eq         only a lower end
+//	<#, hi>     lt_eq         only an upper end
+//	<<a, b, c>> one_of        an enumeration
+//	<n>         fixed_size    an array's length
+type ValidatorKind int
+
+const (
+	ValidatorNone ValidatorKind = iota
+	ValidatorBounds
+	ValidatorGtEq
+	ValidatorLtEq
+	ValidatorOneOf
+	ValidatorFixedSize
+)
+
+// validatorNames are the names generate_parameter_library knows them by.
+var validatorNames = map[ValidatorKind]string{
+	ValidatorBounds:    "bounds<>",
+	ValidatorGtEq:      "gt_eq<>",
+	ValidatorLtEq:      "lt_eq<>",
+	ValidatorOneOf:     "one_of<>",
+	ValidatorFixedSize: "fixed_size<>",
+}
+
+func (v ValidatorKind) String() string { return validatorNames[v] }
+
+// Validator is a parameter's value constraint, with its arguments kept
+// verbatim so that the generator and the formatter both reproduce them.
+type Validator struct {
+	Kind  ValidatorKind
+	Args  []string
+	Range Range
 }
 
 // Op is the connective joining the operands of a constraint.
@@ -275,11 +356,15 @@ type Feature struct {
 	Time        Time
 	TimeRange   Range
 
-	// Default is the literal in parentheses, verbatim. In a configuration it
-	// is the value chosen rather than a fallback.
-	HasDefault   bool
-	Default      string
-	DefaultRange Range
+	// DefaultValues are the literals in parentheses, one per element for an
+	// array type. In a configuration they are the value chosen rather than a
+	// fallback.
+	HasDefault    bool
+	DefaultValues []string
+	DefaultRange  Range
+
+	// Validator constrains the parameter's own value.
+	Validator Validator
 
 	// Constraints are the bracketed lines that followed this entry, in source
 	// order, each either a requirement or an exclusion.
@@ -312,6 +397,24 @@ func (f *Feature) IsAncestorOf(other *Feature) bool {
 		}
 	}
 	return false
+}
+
+// DefaultText renders the parenthesised value as it appears in source.
+func (f *Feature) DefaultText() string {
+	return strings.Join(f.DefaultValues, ", ")
+}
+
+// ValidatorText renders the angle-bracketed validator as it appears in source,
+// or "" when the feature has none.
+func (f *Feature) ValidatorText() string {
+	switch f.Validator.Kind {
+	case ValidatorNone:
+		return ""
+	case ValidatorOneOf:
+		return "<<" + strings.Join(f.Validator.Args, ", ") + ">>"
+	default:
+		return "<" + strings.Join(f.Validator.Args, ", ") + ">"
+	}
 }
 
 // Binding renders the feature's binding pair as it appears in source.

@@ -73,7 +73,7 @@ func detailFor(feature *ftx.Feature) string {
 	}
 
 	if feature.HasDefault {
-		parts = append(parts, "= "+feature.Default)
+		parts = append(parts, "= "+feature.DefaultText())
 	}
 
 	switch {

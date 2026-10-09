@@ -383,7 +383,8 @@ func TestCompletionOffersTypesAfterColon(t *testing.T) {
 
 	labels := labelsOf(list.Items)
 
-	for _, want := range []string{"node", "number", "string", "bool"} {
+	for _, want := range []string{"node", "bool", "int", "double", "string",
+		"bool_array", "int_array", "double_array", "string_array"} {
 		if !contains(labels, want) {
 			t.Errorf("labels = %v, want %q", labels, want)
 		}

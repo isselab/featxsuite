@@ -1,6 +1,9 @@
 package ftx
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 const (
 	headerModel  = "feature_model"
@@ -268,6 +271,10 @@ func (f *File) parseConfigEntry(ln, indent int, toks []token) *Feature {
 					"feature %q already declares a value", ft.Name)
 			}
 			i = f.parseDefault(ln, ft, toks, i)
+		case "<", "<<":
+			f.diag(SeverityError, rangeOf(ln, toks[i]),
+				"a validator belongs on the parameter in the feature model, not in a configuration")
+			i = f.parseValidator(ln, ft, toks, i)
 		default:
 			f.diag(SeverityError, rangeOf(ln, toks[i]),
 				"unexpected %q after %q; a binding goes in %q and a value in %q",
@@ -328,14 +335,14 @@ func (f *File) parseModelEntry(ln, indent int, toks []token) *Feature {
 
 	if i >= len(toks) {
 		f.diag(SeverityError, rangeOf(ln, colon),
-			"expected a type (node|number|string|bool) after %q", ":")
+			"expected a type (%s) after %q", typeList(), ":")
 		return ft
 	}
 
 	t, ok := typeFrom(toks[i].text)
 	if !ok {
 		f.diag(SeverityError, rangeOf(ln, toks[i]),
-			"unknown type %q: expected node, number, string or bool", toks[i].text)
+			"unknown type %q: expected one of %s", toks[i].text, typeList())
 		return ft
 	}
 	ft.Type = t
@@ -360,6 +367,13 @@ func (f *File) parseModelEntry(ln, indent int, toks []token) *Feature {
 			}
 			i = f.parseDefault(ln, ft, toks, i)
 
+		case "<", "<<":
+			if ft.Validator.Kind != ValidatorNone {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"feature %q already declares a validator", ft.Name)
+			}
+			i = f.parseValidator(ln, ft, toks, i)
+
 		case "?", "*":
 			if ft.HasMarker {
 				f.diag(SeverityError, rangeOf(ln, toks[i]),
@@ -373,8 +387,8 @@ func (f *File) parseModelEntry(ln, indent int, toks []token) *Feature {
 
 		default:
 			f.diag(SeverityError, rangeOf(ln, toks[i]),
-				"unexpected %q after the type of %q; bindings go in %q, a value in %q and %q marks it optional",
-				toks[i].text, ft.Name, "{}", "()", "?")
+				"unexpected %q after the type of %q; bindings go in %q, a value in %q, a validator in %q and %q marks it optional",
+				toks[i].text, ft.Name, "{}", "()", "<>", "?")
 			i++
 		}
 	}
@@ -456,14 +470,27 @@ func (f *File) parseBindings(ln int, ft *Feature, toks []token, i int) int {
 	return i
 }
 
-// parseDefault reads `( literal )`, keeping the literal verbatim so that the
-// type checker can judge it and the formatter can reproduce it.
+// parseDefault reads `( literal (, literal)* )`, keeping each element
+// verbatim so that the type checker can judge it and the formatter and the
+// generator can reproduce it. An array type takes several elements.
 func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
 	open := toks[i]
 	i++
 
-	var inner []token
-	closed := false
+	ft.HasDefault = true
+
+	var (
+		inner   []token
+		closed  bool
+		current []string
+	)
+
+	flush := func() {
+		if len(current) > 0 {
+			ft.DefaultValues = append(ft.DefaultValues, strings.Join(current, " "))
+			current = nil
+		}
+	}
 
 	for ; i < len(toks); i++ {
 		if toks[i].text == ")" {
@@ -471,14 +498,25 @@ func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
 			i++
 			break
 		}
+
+		if toks[i].text == "," {
+			if len(current) == 0 {
+				f.diag(SeverityError, rangeOf(ln, toks[i]), "expected a value before %q", ",")
+			}
+			flush()
+			continue
+		}
+
 		inner = append(inner, toks[i])
+		current = append(current, toks[i].text)
 	}
+
+	trailing := closed && len(inner) > 0 && len(current) == 0
+	flush()
 
 	if !closed {
 		f.diag(SeverityError, rangeOf(ln, open), "unclosed %q in feature %q", "(", ft.Name)
 	}
-
-	ft.HasDefault = true
 
 	if len(inner) == 0 {
 		f.diag(SeverityError, rangeOf(ln, open), "expected a value in %q", "()")
@@ -486,12 +524,10 @@ func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
 		return i
 	}
 
-	parts := make([]string, len(inner))
-	for j, t := range inner {
-		parts[j] = t.text
+	if trailing {
+		f.diag(SeverityError, rangeOf(ln, open), "the value list ends with a trailing %q", ",")
 	}
 
-	ft.Default = strings.Join(parts, " ")
 	ft.DefaultRange = Range{
 		Line:      ln,
 		StartChar: inner[0].col,
@@ -499,6 +535,123 @@ func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
 	}
 
 	return i
+}
+
+// parseValidator reads the angle-bracketed value constraint. The form decides
+// which validator it is: two arguments are bounds unless one is `#`, a single
+// argument is a fixed size, and a doubled bracket is an enumeration.
+func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
+	open := toks[i]
+	oneOf := open.text == "<<"
+	closer := ">"
+	if oneOf {
+		closer = ">>"
+	}
+	i++
+
+	var (
+		args    []string
+		last    = open
+		closed  bool
+		current []string
+	)
+
+	flush := func() {
+		if len(current) > 0 {
+			args = append(args, strings.Join(current, " "))
+			current = nil
+		}
+	}
+
+	for ; i < len(toks); i++ {
+		if toks[i].text == closer {
+			closed = true
+			last = toks[i]
+			i++
+			break
+		}
+
+		if toks[i].text == "," {
+			if len(current) == 0 {
+				f.diag(SeverityError, rangeOf(ln, toks[i]), "expected a value before %q", ",")
+			}
+			flush()
+			continue
+		}
+
+		current = append(current, toks[i].text)
+		last = toks[i]
+	}
+
+	flush()
+
+	ft.Validator.Range = Range{
+		Line:      ln,
+		StartChar: open.col,
+		EndChar:   last.col + utf16Len(last.text),
+	}
+
+	if !closed {
+		f.diag(SeverityError, ft.Validator.Range, "unclosed %q in feature %q", open.text, ft.Name)
+	}
+
+	ft.Validator.Args = args
+
+	switch {
+	case oneOf:
+		ft.Validator.Kind = ValidatorOneOf
+		if len(args) == 0 {
+			f.diag(SeverityError, ft.Validator.Range,
+				"%q needs at least one permitted value", "<<>>")
+		}
+
+	case len(args) == 1:
+		if args[0] == "#" {
+			f.diag(SeverityError, ft.Validator.Range,
+				"%q on its own constrains nothing; write a size, a range or one open end", "#")
+			ft.Validator.Kind = ValidatorNone
+			return i
+		}
+		ft.Validator.Kind = ValidatorFixedSize
+
+	case len(args) == 2:
+		lowOpen, highOpen := args[0] == "#", args[1] == "#"
+
+		switch {
+		case lowOpen && highOpen:
+			f.diag(SeverityError, ft.Validator.Range,
+				"both ends are %q, so this constrains nothing", "#")
+			ft.Validator.Kind = ValidatorNone
+		case highOpen:
+			ft.Validator.Kind = ValidatorGtEq
+			ft.Validator.Args = args[:1]
+		case lowOpen:
+			ft.Validator.Kind = ValidatorLtEq
+			ft.Validator.Args = args[1:]
+		default:
+			ft.Validator.Kind = ValidatorBounds
+		}
+
+	case len(args) == 0:
+		f.diag(SeverityError, ft.Validator.Range,
+			"expected a size, a range, or an open end marked %q", "#")
+
+	default:
+		f.diag(SeverityError, ft.Validator.Range,
+			"a range takes two arguments; use %q for an enumeration", "<<a, b, c>>")
+	}
+
+	return i
+}
+
+// typeList renders the accepted type names for a diagnostic.
+func typeList() string {
+	out := make([]string, 0, len(typeNames))
+	for _, name := range typeNames {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ", ")
 }
 
 // parseConstraint reads a bracketed line and attaches it to the entry above.
@@ -644,9 +797,9 @@ func tokenize(line string) []token {
 			width = 2
 		}
 
-		// The two-character connectives have to be recognised before the
-		// single characters, or `&&` becomes two unknown tokens.
-		if (r == '&' || r == '|') && i+1 < len(runes) && runes[i+1] == r {
+		// The doubled punctuation has to be recognised before the single
+		// characters, or `&&` and `<<` become two unknown tokens each.
+		if (r == '&' || r == '|' || r == '<' || r == '>') && i+1 < len(runes) && runes[i+1] == r {
 			flush()
 			toks = append(toks, token{text: string([]rune{r, r}), col: col})
 			i++
@@ -657,7 +810,7 @@ func tokenize(line string) []token {
 		switch r {
 		case ' ', '\t':
 			flush()
-		case ':', '?', '*', '{', '}', '(', ')', '[', ']', '!', '&', '|':
+		case ':', '?', '*', '{', '}', '(', ')', '[', ']', '!', '&', '|', '<', '>', ',':
 			flush()
 			toks = append(toks, token{text: string(r), col: col})
 		default:
@@ -698,7 +851,8 @@ func rangeOf(line int, t token) Range {
 // misspelling is reported as what it was meant to be rather than as a name.
 func isName(s string) bool {
 	switch s {
-	case "", ":", "?", "*", "{", "}", "(", ")", "[", "]", "!", "&", "|", "&&", "||":
+	case "", ":", "?", "*", "{", "}", "(", ")", "[", "]", "!",
+		"&", "|", "&&", "||", "<", ">", "<<", ">>", ",", "#":
 		return false
 	}
 	return !isMode(s) && !isTime(s) && !isTypeName(s)
@@ -739,15 +893,10 @@ func timeFrom(s string) (Time, bool) {
 }
 
 func typeFrom(s string) (Type, bool) {
-	switch s {
-	case "node":
-		return TypeNode, true
-	case "number":
-		return TypeNumber, true
-	case "string":
-		return TypeString, true
-	case "bool":
-		return TypeBool, true
+	for t, name := range typeNames {
+		if name == s {
+			return t, true
+		}
 	}
 	return TypeUnset, false
 }

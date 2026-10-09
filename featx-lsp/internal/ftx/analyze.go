@@ -28,11 +28,20 @@ func Analyze(f *File) []Diagnostic {
 			}
 
 			if ft.Grouping != GroupNone {
-				switch len(ft.Children) {
-				case 0:
+				// A grouping constrains which children may be selected, so it
+				// is only meaningful on something that can have children. The
+				// type rule comes first: saying a parameter "has no children"
+				// would imply that giving it some would make the grouping
+				// legal, and it never can.
+				switch {
+				case ft.Type.IsValue():
+					add(SeverityError, ft.GroupingRange,
+						"a %s parameter cannot carry %q: only a node groups children",
+						ft.Type, ft.Grouping)
+				case len(ft.Children) == 0:
 					add(SeverityError, ft.GroupingRange,
 						"%q groups the children of %q, which has none", ft.Grouping, ft.Name)
-				case 1:
+				case len(ft.Children) == 1:
 					add(SeverityWarning, ft.GroupingRange,
 						"%q over the single child %q has no effect", ft.Grouping, ft.Children[0].Name)
 				}
@@ -84,9 +93,9 @@ func checkShape(kind Kind, ft *Feature) []Diagnostic {
 	if ft.Type == TypeNode {
 		if ft.HasDefault {
 			add(SeverityError, ft.DefaultRange,
-				"a node has no value of its own; %q belongs on a number, string or bool feature", "()")
+				"a node has no value of its own; %q belongs on a parameter", "()")
 		}
-		return out
+		return append(out, checkValidator(ft)...)
 	}
 
 	// A value feature is a parameter of the node enclosing it, so it cannot
@@ -107,20 +116,55 @@ func checkShape(kind Kind, ft *Feature) []Diagnostic {
 	// A configuration that omits the value is taking the model's default, so
 	// only an ill-typed one is worth reporting.
 	if ft.HasDefault {
-		if err := checkLiteral(ft.Type, ft.Default); err != nil {
-			add(SeverityError, ft.DefaultRange, "%s", err)
+		out = append(out, checkValue(ft)...)
+	}
+
+	out = append(out, checkValidator(ft)...)
+
+	return out
+}
+
+// checkValue reports every problem with a parameter's parenthesised value:
+// the wrong number of elements for its type, or an element that does not read
+// as that type.
+func checkValue(ft *Feature) []Diagnostic {
+	var out []Diagnostic
+
+	add := func(format string, args ...any) {
+		out = append(out, Diagnostic{
+			Range:    ft.DefaultRange,
+			Severity: SeverityError,
+			Message:  fmt.Sprintf(format, args...),
+		})
+	}
+
+	if !ft.IsRoot && !ft.Type.IsArray() && len(ft.DefaultValues) > 1 {
+		add("%q is a %s and takes one value, not %d", ft.Name, ft.Type, len(ft.DefaultValues))
+		return out
+	}
+
+	element := ft.Type.Element()
+
+	for _, lit := range ft.DefaultValues {
+		if err := checkLiteral(element, lit); err != nil {
+			add("%s", err)
 		}
 	}
 
 	return out
 }
 
-// checkLiteral reports whether a parenthesised value suits its declared type.
+// checkLiteral reports whether one literal suits a scalar type.
 func checkLiteral(t Type, lit string) error {
 	switch t {
-	case TypeNumber:
+	case TypeInt:
+		if _, err := strconv.ParseInt(lit, 10, 64); err != nil {
+			return fmt.Errorf("%q is not an int", lit)
+		}
+
+	case TypeDouble:
 		if _, err := strconv.ParseFloat(lit, 64); err != nil {
-			return fmt.Errorf("%q is not a number", lit)
+			return fmt.Errorf("%q is not a double", lit)
 		}
 
 	case TypeBool:
@@ -130,6 +174,130 @@ func checkLiteral(t Type, lit string) error {
 
 	case TypeString:
 		// Any text is a string. A quoted literal is accepted as written.
+	}
+
+	return nil
+}
+
+// checkValidator reports a validator that cannot apply to the type it was
+// written on, or whose arguments do not read as that type.
+func checkValidator(ft *Feature) []Diagnostic {
+	v := ft.Validator
+	if v.Kind == ValidatorNone {
+		return nil
+	}
+
+	var out []Diagnostic
+
+	add := func(format string, args ...any) {
+		out = append(out, Diagnostic{
+			Range:    v.Range,
+			Severity: SeverityError,
+			Message:  fmt.Sprintf(format, args...),
+		})
+	}
+
+	if !ft.Type.IsValue() {
+		add("a %s cannot carry a validator; only a parameter constrains its own value", ft.Type)
+		return out
+	}
+
+	switch v.Kind {
+	case ValidatorFixedSize:
+		if !ft.Type.IsArray() {
+			add("%q fixes an array's length, and %q is a %s", "<n>", ft.Name, ft.Type)
+			return out
+		}
+		if _, err := strconv.ParseInt(v.Args[0], 10, 64); err != nil {
+			add("%q is not a whole number of elements", v.Args[0])
+			return out
+		}
+		if want, _ := strconv.Atoi(v.Args[0]); ft.HasDefault && len(ft.DefaultValues) != want {
+			add("the value has %d element(s) but %q requires %d", len(ft.DefaultValues), v.Kind, want)
+		}
+
+	case ValidatorBounds, ValidatorGtEq, ValidatorLtEq:
+		if !ft.Type.IsNumeric() {
+			add("a range needs a numeric type, and %q is a %s", ft.Name, ft.Type)
+			return out
+		}
+		for _, arg := range v.Args {
+			if err := checkLiteral(ft.Type.Element(), arg); err != nil {
+				add("%s", err)
+			}
+		}
+		if v.Kind == ValidatorBounds && len(v.Args) == 2 {
+			lo, loErr := strconv.ParseFloat(v.Args[0], 64)
+			hi, hiErr := strconv.ParseFloat(v.Args[1], 64)
+			if loErr == nil && hiErr == nil && lo > hi {
+				add("the range is empty: %s is greater than %s", v.Args[0], v.Args[1])
+			}
+		}
+
+	case ValidatorOneOf:
+		for _, arg := range v.Args {
+			if err := checkLiteral(ft.Type.Element(), arg); err != nil {
+				add("%s", err)
+			}
+		}
+	}
+
+	out = append(out, checkValueAgainstValidator(ft)...)
+	return out
+}
+
+// checkValueAgainstValidator reports a default that its own validator rejects,
+// which generate_parameter_library would only discover at startup.
+func checkValueAgainstValidator(ft *Feature) []Diagnostic {
+	v := ft.Validator
+
+	if !ft.HasDefault || len(ft.DefaultValues) == 0 {
+		return nil
+	}
+
+	bad := func(format string, args ...any) []Diagnostic {
+		return []Diagnostic{{
+			Range:    ft.DefaultRange,
+			Severity: SeverityError,
+			Message:  fmt.Sprintf(format, args...),
+		}}
+	}
+
+	switch v.Kind {
+	case ValidatorBounds, ValidatorGtEq, ValidatorLtEq:
+		for _, lit := range ft.DefaultValues {
+			got, err := strconv.ParseFloat(lit, 64)
+			if err != nil {
+				continue // already reported as ill-typed
+			}
+
+			if v.Kind != ValidatorLtEq {
+				if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil && got < lo {
+					return bad("the value %s is below the permitted minimum %s", lit, v.Args[0])
+				}
+			}
+
+			hi := v.Args[len(v.Args)-1]
+			if v.Kind != ValidatorGtEq {
+				if limit, err := strconv.ParseFloat(hi, 64); err == nil && got > limit {
+					return bad("the value %s is above the permitted maximum %s", lit, hi)
+				}
+			}
+		}
+
+	case ValidatorOneOf:
+		for _, lit := range ft.DefaultValues {
+			var found bool
+			for _, arg := range v.Args {
+				if arg == lit {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return bad("the value %s is not one of %s", lit, strings.Join(v.Args, ", "))
+			}
+		}
 	}
 
 	return nil
@@ -326,9 +494,14 @@ func CrossCheck(cfg, model *File) []Diagnostic {
 		}
 
 		if declared.Type.IsValue() && entry.HasDefault {
-			if err := checkLiteral(declared.Type, entry.Default); err != nil {
-				add(SeverityError, entry.DefaultRange, "%s", err)
-			}
+			// The configuration declares no type, so judge its value against
+			// the one the model gave the parameter, validator included.
+			typed := *entry
+			typed.Type = declared.Type
+			typed.Validator = declared.Validator
+
+			out = append(out, checkValue(&typed)...)
+			out = append(out, checkValueAgainstValidator(&typed)...)
 		}
 
 		if entry.HasBindings && declared.HasBindings {

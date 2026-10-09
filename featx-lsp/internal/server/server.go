@@ -18,7 +18,7 @@ import (
 // Name and Version identify the server to the client.
 const (
 	Name    = "featx-lsp"
-	Version = "0.6.0"
+	Version = "0.7.1"
 )
 
 // ErrExit is returned by Run when the client sends the exit notification.

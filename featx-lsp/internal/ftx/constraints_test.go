@@ -204,22 +204,22 @@ func TestAnalyzeShapeChecks(t *testing.T) {
 		{
 			name: "node with a value",
 			src:  "M:\n    a : node {static early} (3)\n",
-			want: `a node has no value of its own; "()" belongs on a number, string or bool feature`,
+			want: `a node has no value of its own; "()" belongs on a parameter`,
 		},
 		{
 			name: "value feature with children",
-			src:  "M:\n    a : node {static early}\n        n : number (1)\n            m : number (2)\n",
-			want: `"n" is a number and cannot contain features; only a node can`,
+			src:  "M:\n    a : node {static early}\n        n : double (1)\n            m : double (2)\n",
+			want: `"n" is a double and cannot contain features; only a node can`,
 		},
 		{
 			name: "top-level value feature",
-			src:  "M:\n    n : number (1)\n",
-			want: `"n" is a number but no enclosing node is bound with it`,
+			src:  "M:\n    n : double (1)\n",
+			want: `"n" is a double but no enclosing node is bound with it`,
 		},
 		{
 			name: "ill-typed number",
-			src:  "M:\n    a : node {static early}\n        n : number (fast)\n",
-			want: `"fast" is not a number`,
+			src:  "M:\n    a : node {static early}\n        n : double (fast)\n",
+			want: `"fast" is not a double`,
 		},
 		{
 			name: "ill-typed bool",
@@ -238,7 +238,7 @@ func TestAnalyzeShapeChecks(t *testing.T) {
 
 func TestAnalyzeAcceptsWellTypedValues(t *testing.T) {
 	src := "M:\n    a : node {static early}\n" +
-		"        n : number (-2.5e3)\n        s : string (a b c)\n        b : bool (false)\n"
+		"        n : double (-2.5e3)\n        s : string (a b c)\n        b : bool (false)\n"
 
 	for _, d := range Analyze(Parse(src)) {
 		if d.Severity == SeverityError {
@@ -356,7 +356,7 @@ func TestAnalyzeAcceptsTheRealModel(t *testing.T) {
 func TestCrossCheckParameterTakesNoBinding(t *testing.T) {
 	cfg := Parse("vel_max *{dynamic late}\n")
 
-	want := `"vel_max" is a number parameter of "navigation" and is bound with it, ` +
+	want := `"vel_max" is a double parameter of "navigation" and is bound with it, ` +
 		`so it takes no binding of its own`
 	if got := CrossCheck(cfg, Parse(modelSrc)); !hasMessage(got, want) {
 		t.Errorf("missing diagnostic %q; got %v", want, messages(got))
@@ -380,7 +380,7 @@ func TestCrossCheckNodeNeedsABinding(t *testing.T) {
 func TestCrossCheckSelectionReachesParameters(t *testing.T) {
 	omitted := Parse("navigation *{static early}\n")
 
-	want := `"navigation" is selected, so its number parameter "vel_max" must be selected too, ` +
+	want := `"navigation" is selected, so its double parameter "vel_max" must be selected too, ` +
 		`but this configuration omits it`
 	if got := CrossCheck(omitted, Parse(modelSrc)); !hasMessage(got, want) {
 		t.Errorf("missing diagnostic %q; got %v", want, messages(got))
@@ -418,7 +418,7 @@ func TestCrossCheckParameterFreeWhenNodeUnselected(t *testing.T) {
 func TestCrossCheckConfiguredValueMustBeWellTyped(t *testing.T) {
 	cfg := Parse("vel_max *(quick)\n")
 
-	want := `"quick" is not a number`
+	want := `"quick" is not a double`
 	if got := CrossCheck(cfg, Parse(modelSrc)); !hasMessage(got, want) {
 		t.Errorf("missing diagnostic %q; got %v", want, messages(got))
 	}
@@ -499,14 +499,14 @@ func TestFormatPreservesConstraints(t *testing.T) {
 }
 
 func TestFormatPreservesTypesAndValues(t *testing.T) {
-	src := "M:\n    a : node{static early}\n        n : number(1.5)\n"
+	src := "M:\n    a : node{static early}\n        n : double(1.5)\n"
 
 	got, ok := Format(Parse(src))
 	if !ok {
 		t.Fatalf("Format refused: %v", messages(Parse(src).Diagnostics))
 	}
 
-	want := "M:\n    a : node {static early}\n        n : number (1.5)\n"
+	want := "M:\n    a : node {static early}\n        n : double (1.5)\n"
 	if got != want {
 		t.Errorf("Format() =\n%q\nwant\n%q", got, want)
 	}
@@ -563,5 +563,272 @@ func TestFormatRefusesBrokenDocuments(t *testing.T) {
 				t.Error("Format accepted a document with syntax errors")
 			}
 		})
+	}
+}
+
+// TestAnalyzeRejectsGroupedParameter: a grouping constrains which children may
+// be selected, and a parameter has none, ever.
+func TestAnalyzeRejectsGroupedParameter(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "xor on a number",
+			src:  "M:\n    nav : node {static early}\n        xor vel_max : double (1.5)\n",
+			want: `a double parameter cannot carry "xor": only a node groups children`,
+		},
+		{
+			name: "or on a string",
+			src:  "M:\n    nav : node {static early}\n        or mode : string (fast)\n",
+			want: `a string parameter cannot carry "or": only a node groups children`,
+		},
+		{
+			name: "xor on a bool",
+			src:  "M:\n    nav : node {static early}\n        xor flag : bool (true)\n",
+			want: `a bool parameter cannot carry "xor": only a node groups children`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Analyze(Parse(tc.src))
+
+			if !hasMessage(got, tc.want) {
+				t.Errorf("missing diagnostic %q; got %v", tc.want, messages(got))
+			}
+
+			// The type rule replaces the childless-grouping message rather
+			// than adding to it.
+			for _, d := range got {
+				if strings.Contains(d.Message, "which has none") {
+					t.Errorf("a parameter should not be told it has no children: %s", d.Message)
+				}
+			}
+		})
+	}
+}
+
+// TestCrossCheckOrAllowsSeveralSelections pins the contrast with xor: an or
+// group places no upper bound on how many children may be selected.
+func TestCrossCheckOrAllowsSeveralSelections(t *testing.T) {
+	model := Parse("M:\n    or sensors : node {static early}\n" +
+		"        lidar : node {dynamic late}\n        sonar : node {dynamic late}\n" +
+		"        radar : node {dynamic late}\n")
+
+	cfg := Parse("sensors *{static early}\nlidar *{dynamic late}\n" +
+		"sonar *{dynamic late}\nradar {dynamic late}\n")
+
+	for _, d := range CrossCheck(cfg, model) {
+		if d.Severity == SeverityError {
+			t.Errorf("an or group may have several children selected, got %q", d.Message)
+		}
+	}
+}
+
+// TestCrossCheckXorAllowsOnlyOne is the mirror of the above.
+func TestCrossCheckXorAllowsOnlyOne(t *testing.T) {
+	model := Parse("M:\n    xor footprint : node {static early}\n" +
+		"        circular : node {dynamic late}\n        square : node {dynamic late}\n")
+
+	one := Parse("footprint *{static early}\ncircular *{dynamic late}\nsquare {dynamic late}\n")
+
+	for _, d := range CrossCheck(one, model) {
+		if d.Severity == SeverityError {
+			t.Errorf("one selected child is allowed, got %q", d.Message)
+		}
+	}
+
+	two := Parse("footprint *{static early}\ncircular *{dynamic late}\nsquare *{dynamic late}\n")
+
+	want := `"footprint" is an xor group, so only one of its children may be selected; ` +
+		`"circular", "square" are all selected`
+
+	if got := CrossCheck(two, model); !hasMessage(got, want) {
+		t.Errorf("missing diagnostic %q; got %v", want, messages(got))
+	}
+}
+
+func TestParseAllValidatorForms(t *testing.T) {
+	src := "M:\n    n : node {dynamic late}\n" +
+		"        a : double (1.5) <0.0, 3.0>\n" +
+		"        b : double (1.0) <0.0, #>\n" +
+		"        c : double (-0.01) <#, 0.0>\n" +
+		"        d : double (7.0) <<0.0, 3.0, 7.0>>\n" +
+		"        e : double_array (0.0, 0.0, 0.0, 0.0) <4>\n"
+
+	f := Parse(src)
+	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	for _, d := range Analyze(f) {
+		if d.Severity == SeverityError {
+			t.Fatalf("unexpected error: %s", d.Message)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		kind ValidatorKind
+		args []string
+	}{
+		{"a", ValidatorBounds, []string{"0.0", "3.0"}},
+		{"b", ValidatorGtEq, []string{"0.0"}},
+		{"c", ValidatorLtEq, []string{"0.0"}},
+		{"d", ValidatorOneOf, []string{"0.0", "3.0", "7.0"}},
+		{"e", ValidatorFixedSize, []string{"4"}},
+	} {
+		ft, ok := f.Lookup(tc.name)
+		if !ok {
+			t.Errorf("%s not found", tc.name)
+			continue
+		}
+		if ft.Validator.Kind != tc.kind {
+			t.Errorf("%s kind = %v, want %v", tc.name, ft.Validator.Kind, tc.kind)
+		}
+		if got := strings.Join(ft.Validator.Args, ","); got != strings.Join(tc.args, ",") {
+			t.Errorf("%s args = %v, want %v", tc.name, ft.Validator.Args, tc.args)
+		}
+	}
+}
+
+func TestParseArrayValue(t *testing.T) {
+	f := Parse("M:\n    n : node {static early}\n        a : double_array (1.0, 2.5, 3.0)\n")
+
+	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	a, _ := f.Lookup("a")
+	if got := a.DefaultValues; len(got) != 3 || got[0] != "1.0" || got[2] != "3.0" {
+		t.Errorf("DefaultValues = %v, want [1.0 2.5 3.0]", got)
+	}
+	if got := a.DefaultText(); got != "1.0, 2.5, 3.0" {
+		t.Errorf("DefaultText = %q", got)
+	}
+}
+
+// TestParseStringValueKeepsSpaces: elements are comma-separated, so the tokens
+// inside one element rejoin and a string needs no quoting.
+func TestParseStringValueKeepsSpaces(t *testing.T) {
+	f := Parse("M:\n    n : node {static early}\n        s : string (a b c)\n")
+
+	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	s, _ := f.Lookup("s")
+	if got := s.DefaultValues; len(got) != 1 || got[0] != "a b c" {
+		t.Errorf("DefaultValues = %v, want [\"a b c\"]", got)
+	}
+}
+
+func TestAnalyzeTypeAndValidatorErrors(t *testing.T) {
+	const head = "M:\n    n : node {static early}\n        "
+
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "int given a double",
+			src:  head + "a : int (1.5)\n",
+			want: `"1.5" is not an int`,
+		},
+		{
+			name: "double given a word",
+			src:  head + "a : double (fast)\n",
+			want: `"fast" is not a double`,
+		},
+		{
+			name: "scalar given several values",
+			src:  head + "a : double (1.0, 2.0)\n",
+			want: `"a" is a double and takes one value, not 2`,
+		},
+		{
+			name: "array element ill-typed",
+			src:  head + "a : int_array (1, two, 3)\n",
+			want: `"two" is not an int`,
+		},
+		{
+			name: "fixed_size on a scalar",
+			src:  head + "a : double (1.0) <4>\n",
+			want: `"<n>" fixes an array's length, and "a" is a double`,
+		},
+		{
+			name: "fixed_size disagrees with the value",
+			src:  head + "a : double_array (1.0, 2.0) <3>\n",
+			want: `the value has 2 element(s) but "fixed_size<>" requires 3`,
+		},
+		{
+			name: "range on a string",
+			src:  head + "a : string (x) <0.0, 1.0>\n",
+			want: `a range needs a numeric type, and "a" is a string`,
+		},
+		{
+			name: "empty range",
+			src:  head + "a : double (1.0) <3.0, 0.0>\n",
+			want: "the range is empty: 3.0 is greater than 0.0",
+		},
+		{
+			name: "default below the minimum",
+			src:  head + "a : double (-1.0) <0.0, 3.0>\n",
+			want: "the value -1.0 is below the permitted minimum 0.0",
+		},
+		{
+			name: "default above the maximum",
+			src:  head + "a : double (9.0) <0.0, 3.0>\n",
+			want: "the value 9.0 is above the permitted maximum 3.0",
+		},
+		{
+			name: "default outside the enumeration",
+			src:  head + "a : double (5.0) <<0.0, 3.0>>\n",
+			want: "the value 5.0 is not one of 0.0, 3.0",
+		},
+		{
+			name: "validator on a node",
+			src:  "M:\n    n : node {static early} <0, 1>\n",
+			want: "a node cannot carry a validator; only a parameter constrains its own value",
+		},
+		{
+			name: "both ends open",
+			src:  head + "a : double (1.0) <#, #>\n",
+			want: `both ends are "#", so this constrains nothing`,
+		},
+		{
+			name: "too many range arguments",
+			src:  head + "a : double (1.0) <0.0, 1.0, 2.0>\n",
+			want: `a range takes two arguments; use "<<a, b, c>>" for an enumeration`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := Parse(tc.src)
+			got := append(f.Diagnostics, Analyze(f)...)
+
+			if !hasMessage(got, tc.want) {
+				t.Errorf("missing diagnostic %q; got %v", tc.want, messages(got))
+			}
+		})
+	}
+}
+
+func TestFormatPreservesValidators(t *testing.T) {
+	src := "M:\n    n : node {static early}\n" +
+		"        a : double (1.5) <0.0,3.0>\n" +
+		"        b : double_array (1.0,2.0) <2>\n" +
+		"        c : string (x) <<x, y>>\n"
+
+	got, ok := Format(Parse(src))
+	if !ok {
+		t.Fatalf("Format refused: %v", messages(Parse(src).Diagnostics))
+	}
+
+	want := "M:\n    n : node {static early}\n" +
+		"        a : double (1.5) <0.0, 3.0>\n" +
+		"        b : double_array (1.0, 2.0) <2>\n" +
+		"        c : string (x) <<x, y>>\n"
+
+	if got != want {
+		t.Errorf("Format() =\n%q\nwant\n%q", got, want)
 	}
 }

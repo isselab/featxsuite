@@ -45,7 +45,7 @@ func Config(f *ftx.File) ([]byte, error) {
 			Name:        ft.Name,
 			Type:        ft.Type.String(),
 			IsSelected:  ft.Selected,
-			Value:       ft.Default,
+			Value:       ft.DefaultText(),
 			BindingTime: title(ft.Time.String()),
 			BindingMode: title(ft.Mode.String()),
 		})
@@ -114,7 +114,7 @@ func feature(ft *ftx.Feature) node {
 		Name:               ft.Name,
 		Type:               ft.Type.String(),
 		IsOptional:         &optional,
-		Default:            ft.Default,
+		Default:            ft.DefaultText(),
 		Grouping:           ft.Grouping.String(),
 		Includes:           operandList(ft.Requires()),
 		Excludes:           operandList(ft.Excludes()),

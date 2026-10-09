@@ -35,12 +35,22 @@ var (
 		{Label: "node", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
 			Documentation: "A bindable unit of behaviour. Its bindings follow in braces.",
 			InsertText:    "node {"},
-		{Label: "number", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
-			Documentation: "A numeric parameter of the enclosing node."},
-		{Label: "string", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
-			Documentation: "A textual parameter of the enclosing node."},
 		{Label: "bool", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
 			Documentation: "A true/false parameter of the enclosing node."},
+		{Label: "int", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A whole-number parameter of the enclosing node."},
+		{Label: "double", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A floating-point parameter of the enclosing node."},
+		{Label: "string", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A textual parameter of the enclosing node."},
+		{Label: "bool_array", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A list of true/false values."},
+		{Label: "int_array", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A list of whole numbers."},
+		{Label: "double_array", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A list of floating-point values."},
+		{Label: "string_array", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A list of strings."},
 	}
 )
 
@@ -160,7 +170,7 @@ func entryDetail(ft *ftx.Feature) string {
 		out += " {" + ft.Binding() + "}"
 	}
 	if ft.HasDefault {
-		out += " (" + ft.Default + ")"
+		out += " (" + ft.DefaultText() + ")"
 	}
 
 	return out

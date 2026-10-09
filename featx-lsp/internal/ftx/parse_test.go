@@ -5,7 +5,7 @@ import "testing"
 // modelSrc mirrors featxcli/featxcli/model/features.ftx.
 const modelSrc = `RB-1-BASE:
     xor navigation : node {static early} ?
-        vel_max : number (1.5)
+        vel_max : double (1.5)
         to_loading : node {dynamic late}
             [square && attach && lift]
         to_delivery : node {dynamic late}
@@ -118,14 +118,14 @@ func TestParseTypedParameter(t *testing.T) {
 		t.Fatal("vel_max not found")
 	}
 
-	if vel.Type != TypeNumber {
+	if vel.Type != TypeDouble {
 		t.Errorf("Type = %v, want number", vel.Type)
 	}
 	if !vel.HasDefault {
 		t.Fatal("HasDefault = false, want true")
 	}
-	if vel.Default != "1.5" {
-		t.Errorf("Default = %q, want %q", vel.Default, "1.5")
+	if vel.DefaultText() != "1.5" {
+		t.Errorf("Default = %q, want %q", vel.DefaultText(), "1.5")
 	}
 	if vel.HasBindings {
 		t.Error("HasBindings = true: vel_max declares none")
@@ -140,7 +140,7 @@ func TestParseTypedParameter(t *testing.T) {
 func TestParseAllTypes(t *testing.T) {
 	src := "M:\n" +
 		"    root_node : node {static early}\n" +
-		"        n : number (1)\n" +
+		"        n : double (1)\n" +
 		"        s : string (hello)\n" +
 		"        b : bool (true)\n"
 
@@ -154,7 +154,7 @@ func TestParseAllTypes(t *testing.T) {
 		typ  Type
 		def  string
 	}{
-		{"n", TypeNumber, "1"},
+		{"n", TypeDouble, "1"},
 		{"s", TypeString, "hello"},
 		{"b", TypeBool, "true"},
 	} {
@@ -166,8 +166,8 @@ func TestParseAllTypes(t *testing.T) {
 		if ft.Type != tc.typ {
 			t.Errorf("%s Type = %v, want %v", tc.name, ft.Type, tc.typ)
 		}
-		if ft.Default != tc.def {
-			t.Errorf("%s Default = %q, want %q", tc.name, ft.Default, tc.def)
+		if ft.DefaultText() != tc.def {
+			t.Errorf("%s Default = %q, want %q", tc.name, ft.DefaultText(), tc.def)
 		}
 	}
 }
@@ -279,12 +279,12 @@ func TestParseErrors(t *testing.T) {
 		{
 			name: "missing type",
 			src:  "M:\n    nav:\n",
-			want: `expected a type (node|number|string|bool) after ":"`,
+			want: `expected a type (bool, bool_array, double, double_array, int, int_array, node, string, string_array) after ":"`,
 		},
 		{
 			name: "unknown type",
 			src:  "M:\n    nav : widget {static early}\n",
-			want: `unknown type "widget": expected node, number, string or bool`,
+			want: `unknown type "widget": expected one of bool, bool_array, double, double_array, int, int_array, node, string, string_array`,
 		},
 		{
 			name: "node without bindings",
@@ -328,18 +328,18 @@ func TestParseErrors(t *testing.T) {
 		},
 		{
 			name: "empty value",
-			src:  "M:\n    a : node {static early}\n        n : number ()\n",
+			src:  "M:\n    a : node {static early}\n        n : double ()\n",
 			want: `expected a value in "()"`,
 		},
 		{
 			name: "unclosed value",
-			src:  "M:\n    a : node {static early}\n        n : number (1\n",
+			src:  "M:\n    a : node {static early}\n        n : double (1\n",
 			want: `unclosed "(" in feature "n"`,
 		},
 		{
 			name: "junk after the type",
 			src:  "M:\n    nav : node static early\n",
-			want: `unexpected "static" after the type of "nav"; bindings go in "{}", a value in "()" and "?" marks it optional`,
+			want: `unexpected "static" after the type of "nav"; bindings go in "{}", a value in "()", a validator in "<>" and "?" marks it optional`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -441,7 +441,7 @@ func TestParseMixedIndentationFromTheSpec(t *testing.T) {
 	// `vel_max` is written with four spaces then a tab, which must land it
 	// beside `to_loading` rather than beneath it.
 	src := "M:\n    xor navigation : node {static early} ?\n" +
-		"    \tvel_max : number (1.5)\n        to_loading : node {dynamic late}\n"
+		"    \tvel_max : double (1.5)\n        to_loading : node {dynamic late}\n"
 
 	f := Parse(src)
 

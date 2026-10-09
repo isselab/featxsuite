@@ -15,7 +15,7 @@ const modelSrc = `RB-1-BASE:
         to_base : node {dynamic late}
     footprint : node {static early} ?
         square : node {dynamic late}
-        radius : number (0.3)
+        radius : double (0.3)
     attach : node {dynamic late}
         ![to_base]
 `
@@ -228,8 +228,8 @@ func TestModelCarriesTypeAndDefault(t *testing.T) {
 
 	radius := find(t, root, "radius")
 
-	if radius["type"] != "number" {
-		t.Errorf("type = %v, want number", radius["type"])
+	if radius["type"] != "double" {
+		t.Errorf("type = %v, want double", radius["type"])
 	}
 	if radius["default"] != "0.3" {
 		t.Errorf("default = %v, want 0.3", radius["default"])

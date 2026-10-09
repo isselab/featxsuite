@@ -2,7 +2,7 @@
   "name": "featx",
   "displayName": "FeatX",
   "description": "Language support for the FeatX feature-modelling DSL (.ftx)",
-  "version": "0.6.0",
+  "version": "0.7.1",
   "publisher": "isselab",
   "license": "Apache-2.0",
   "repository": {

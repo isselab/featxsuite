@@ -102,7 +102,11 @@
       "comment": "The type, then the braced bindings and the parenthesised value. Flagging a bad word is left to the language server, which reports it with a precise range.",
       "patterns": [
         {
-          "match": "\\b(node|number|string|bool)\\b",
+          "match": "[?*]",
+          "name": "keyword.operator.marker.featx"
+        },
+        {
+          "match": "\\b(node|bool|int|double|string|bool_array|int_array|double_array|string_array)\\b",
           "name": "storage.type.featx"
         },
         {
@@ -112,6 +116,14 @@
         {
           "match": "\\b(early|late)\\b",
           "name": "support.constant.binding-time.featx"
+        },
+        {
+          "match": "<<|>>|<|>",
+          "name": "punctuation.section.angle.featx"
+        },
+        {
+          "match": "#",
+          "name": "constant.language.open-end.featx"
         },
         {
           "match": "[{}]",
@@ -144,6 +156,18 @@
               "name": "string.unquoted.featx"
             }
           ]
+        },
+        {
+          "match": "[-+]?\\d+(\\.\\d+)?([eE][-+]?\\d+)?",
+          "name": "constant.numeric.featx"
+        },
+        {
+          "match": "\\b(true|false)\\b",
+          "name": "constant.language.boolean.featx"
+        },
+        {
+          "match": "[A-Za-z_][\\w.-]*",
+          "name": "string.unquoted.featx"
         }
       ]
     },
