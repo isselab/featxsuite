@@ -8,8 +8,8 @@
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
-  <depend>featx_interfaces</depend>
-  <depend>composition_interfaces</depend>
+  <depend>rclpy_components</depend>
+  <exec_depend>ros2component</exec_depend>
   <exec_depend>ros2cli</exec_depend>
   <exec_depend>setuptools</exec_depend>
 

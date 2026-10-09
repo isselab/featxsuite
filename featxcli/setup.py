@@ -35,8 +35,6 @@ setup(
     entry_points={
         'console_scripts': [
             'configurator = featxcli.configurator:main',
-            'plugin_registry = featxcli.plugin_registry:main',
-            'component_container = featxcli.component_container:main',
         ],
         'ros2cli.command': [
             'featx = featxcli.command.featx:FeatxCommand',

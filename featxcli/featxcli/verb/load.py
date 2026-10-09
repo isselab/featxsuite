@@ -1,18 +1,13 @@
 from ros2cli.verb import VerbExtension
 from featxcli.configurator import Configurator
-import subprocess, os, re
-from ament_index_python.packages import get_package_share_directory
+import subprocess
 from rclpy.logging import get_logger
-from featxcli.executor_list import EXECUTOR_LIST
-from featxcli.containers import CPP_CONTAINER, find_component_id
+from featxcli import components
+from featxcli.containers import CPP_CONTAINER, PY_CONTAINER, find_component_id
 
 
 configurator = Configurator()
 logger = get_logger('load')
-project_name = 'packages'
-#not to be changed
-ILIB_PLUGINS_DIRECTORY = 'py_plugin_executor'
-ILIB_PLUGINS_EXECUTOR_PKG = 'py_plugin_executor'
 
 class LoadVerb(VerbExtension):
     """The verb for selecting a configured feature."""
@@ -44,8 +39,10 @@ class LoadVerb(VerbExtension):
 
                         if fmode == "Static" and ftime == "Early":
 
-                            already_bound = (find_component_id(CPP_CONTAINER, feature_name) is not None
-                                             or self.check_running_node_list(feature_name) == "yes")
+                            already_bound = (
+                                find_component_id(CPP_CONTAINER, feature_name) is not None
+                                or find_component_id(PY_CONTAINER, feature_name) is not None
+                                or self.check_running_node_list(feature_name) == "yes")
 
                             if already_bound:
                                 logger.info(f"The feature {feature_name} you are attempting to select has been bound static and loaded at compile time.")
@@ -54,85 +51,7 @@ class LoadVerb(VerbExtension):
 
                         else:
                             logger.info(f"*** Loading feature: {feature_name}...***")
-
-                            if configurator.get_parent(feature_name) == 'root':
-                                if feature_name in EXECUTOR_LIST:
-                                    package_name = ILIB_PLUGINS_EXECUTOR_PKG
-                                    logger.info(f"Feature {feature_name} found in package {package_name}")
-                                else:
-                                    #abstract feature likelihood
-                                    package_name = feature_name
-                                    logger.info(f"Feature {feature_name} found in package {package_name}")
-                            else:
-                                package_name = configurator.get_parent(feature_name)
-                                #build a py path link to py package
-                                logger.info(f"Feature {feature_name} found in package {package_name}")
-
-                            pkg_share = get_package_share_directory(package_name)
-                            
-                            #check for CMakeLists.txt file
-                            nav_to_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', project_name, package_name)
-
-                            #confirm package existence
-                            if not os.path.exists(nav_to_package) or not os.path.isdir(nav_to_package):
-                                logger.info(f"Package {package_name} that should contain {feature_name} doesnot exist in project!")
-                                return
-
-                            cml_file_path = os.path.abspath(os.path.join(nav_to_package, 'CMakeLists.txt'))
-
-                            #check for rclpy module
-                            if package_name == ILIB_PLUGINS_DIRECTORY:
-                                nav_to_rclpy_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', project_name, package_name, ILIB_PLUGINS_DIRECTORY)
-                            else:
-                                rclpy_plugin_dir_name = package_name
-                                nav_to_rclpy_package = os.path.join(pkg_share, '..', '..', '..', '..', 'src', project_name, package_name, rclpy_plugin_dir_name)
-                            
-                            feature_filename = f"{feature_name}.py"
-                            feature_module_path = os.path.abspath(os.path.join(nav_to_rclpy_package, feature_filename))
-
-                            # check if the CMakeLists.txt file exists
-                            if os.path.exists(cml_file_path):
-
-                                #pascal case feature name joined with package name
-                                comp_class_name = self.to_pascal_case(feature_name)
-                                plugin_name = f"featx_plugin::{comp_class_name}"
-
-                                comp_exists_result = subprocess.run(['ros2', 'component', 'list'],capture_output=True, text=True)
-
-                                if any(f"/{feature_name}" in component for component in comp_exists_result.stdout.splitlines()):
-                                    logger.info(f"FeatX plugin {feature_name} has already been loaded")
-                                else:
-                                    logger.info(f"Loading plugin {plugin_name} in package {package_name}")
-                                    load_result = subprocess.run(['ros2', 'component', 'load', CPP_CONTAINER, package_name, plugin_name],capture_output=True, text=True)
-
-                                    if load_result.returncode == 0:
-                                        logger.info(load_result.stdout)
-                                        configurator.updateConfigModelSelection(feature_name, True)
-                                        
-                                    elif load_result.returncode == 1:
-                                        logger.info(load_result.stderr)
-
-                                    logger.info(f"{feature_name} loaded successfully.\n")
-
-                            #else if the rclpy module exists in py_plugin_executor
-                            elif os.path.exists(feature_module_path):
-                                logger.info(f"CMakeLists.txt file not found at: {cml_file_path}")
-                                logger.info("Checking for rclpy package ...")
-
-                                #load python package of a separate thread
-                                module_name = f"{package_name}.{feature_name}"
-                                class_name = self.to_pascal_case(feature_name)
-                                object_data = f"{{module_name: '{module_name}', class_name: '{class_name}'}}"
-                                load_py_plugin = subprocess.run(['ros2', 'service', 'call', '/load_feature', 'featx_interfaces/srv/LoadFeature', object_data],capture_output=True, text=True)
-
-                                success, message = self.read_service_response(load_py_plugin)
-                                logger.info(f"Service message: {message}")
-
-                                if success:
-                                    configurator.updateConfigModelSelection(feature_name, True)
-
-                            else:
-                                logger.info(f"No rclcpp or rclpy package for the {feature_name} feature found.")
+                            self.load_component(feature_name)
 
                     else:
                         logger.info("Binding time not late. Cannot run this command at compile time")
@@ -144,16 +63,43 @@ class LoadVerb(VerbExtension):
         else:
             logger.info("Fix issue(s), build and rerun the command again")
 
-    def read_service_response(self, completed):
-        #ros2 service call exits 0 even when the service itself reports failure
-        if completed.returncode != 0:
-            return False, completed.stderr.strip()
+    def load_component(self, feature_name):
+        """Load the component implementing a feature into its container.
 
-        success = re.search(r"success=(True|False)", completed.stdout)
-        message = re.search(r"message='([^']*)'", completed.stdout)
+        Both languages take the same path: the resource index says which
+        package provides the feature and which container hosts it, and
+        `ros2 component load` does the rest.
+        """
+        try:
+            impl = components.find(feature_name)
+        except components.Ambiguous as e:
+            logger.info(str(e))
+            return
 
-        return (success is not None and success.group(1) == "True",
-                message.group(1) if message else "no message in response")
+        if impl is None:
+            logger.info(
+                f"No component is registered for feature {feature_name}. An rclcpp feature "
+                f"registers with rclcpp_components_register_nodes, an rclpy one with "
+                f"rclpy_components.setup_helper.register_nodes."
+            )
+            return
+
+        if find_component_id(impl.container, feature_name) is not None:
+            logger.info(f"FeatX plugin {feature_name} has already been loaded")
+            return
+
+        logger.info(f"Loading {impl} into {impl.container}")
+
+        result = subprocess.run(
+            ['ros2', 'component', 'load', impl.container, impl.package, impl.plugin],
+            capture_output=True, text=True)
+
+        if result.returncode == 0:
+            logger.info(result.stdout.strip())
+            configurator.updateConfigModelSelection(feature_name, True)
+            logger.info(f"{feature_name} loaded successfully.\n")
+        else:
+            logger.info(result.stderr.strip())
 
     def check_running_node_list(self, feature_name):
         result = subprocess.run(["ros2", "node", "list"], capture_output=True, text=True)
@@ -166,11 +112,6 @@ class LoadVerb(VerbExtension):
         else:
             return "no"
 
-    def to_pascal_case(self, name):
-        parts = re.split(r'[\s_-]+', name)
-        return ''.join(word.capitalize() for word in parts)
-        
-        
     def check_if_feature_exists(self, feature_name):
         return configurator.find_feature(feature_name)
     

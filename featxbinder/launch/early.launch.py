@@ -30,5 +30,8 @@ def generate_launch_description():
     Node(package='elevator', executable='elevator'),
     Node(package='footprint', executable='footprint'),
     Node(package='shelf', executable='shelf'),
-    Node(package='featxcli', executable='plugin_registry') #donot remove this
+    # The rclpy counterpart of featx_container: it hosts the Python features
+    # so that both languages are loaded through `ros2 component`.
+    Node(package='rclpy_components', executable='component_container_mt',
+         name='featx_py_container') #donot remove this
  ])
