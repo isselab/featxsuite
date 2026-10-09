@@ -2,11 +2,17 @@ package ftx
 
 import "strings"
 
-// Format renders the document in canonical form: the header on the first
-// line, then one entry per line indented IndentUnit columns per nesting level,
-// written as `[grouping ]name <marker>: mode time` with single spaces between
-// the parts. This is the style features.ftx and configs.ftx already use, so
-// formatting either of them is a no-op.
+// Format renders the document in canonical form, indented IndentUnit columns
+// per nesting level.
+//
+// A model opens with its root feature and writes each entry as
+//
+//	[grouping ]name : type [{mode time}] [(value)] [?]
+//
+// with the feature's constraints on their own lines one level further in. A
+// configuration opens with its header and writes
+//
+//	name [marker][{mode time}] [(value)]
 //
 // It reports false and formats nothing if the document has syntax errors,
 // since the parse tree would not faithfully represent what the author wrote.
@@ -23,18 +29,20 @@ func Format(f *File) (string, bool) {
 
 	var sb strings.Builder
 
-	switch f.Kind {
-	case KindModel:
+	// A model's entries sit one level in from its root line; a configuration
+	// has no line above its entries, so they start at column 0.
+	depth := 0
+
+	if f.Kind == KindModel {
 		if f.ModelName == "" {
 			return "", false
 		}
-		sb.WriteString(headerModel + ": " + f.ModelName + "\n")
-	case KindConfig:
-		sb.WriteString(headerConfig + ":\n")
+		sb.WriteString(f.ModelName + ":\n")
+		depth = 1
 	}
 
-	for _, root := range f.Roots {
-		if !writeEntry(&sb, root, 1) {
+	for _, ft := range f.TopLevel() {
+		if !writeEntry(&sb, f.Kind, ft, depth) {
 			return "", false
 		}
 	}
@@ -42,12 +50,19 @@ func Format(f *File) (string, bool) {
 	return sb.String(), true
 }
 
-func writeEntry(sb *strings.Builder, ft *Feature, depth int) bool {
-	if ft.Mode == ModeUnset || ft.Time == TimeUnset || ft.Name == "" {
+func writeEntry(sb *strings.Builder, kind Kind, ft *Feature, depth int) bool {
+	if ft.Name == "" {
+		return false
+	}
+	if kind == KindModel && ft.Type == TypeUnset {
+		return false
+	}
+	if ft.HasBindings && (ft.Mode == ModeUnset || ft.Time == TimeUnset) {
 		return false
 	}
 
-	sb.WriteString(strings.Repeat(" ", depth*IndentUnit))
+	indent := strings.Repeat(" ", depth*IndentUnit)
+	sb.WriteString(indent)
 
 	if ft.Grouping != GroupNone {
 		sb.WriteString(ft.Grouping.String())
@@ -56,8 +71,57 @@ func writeEntry(sb *strings.Builder, ft *Feature, depth int) bool {
 
 	sb.WriteString(ft.Name)
 
-	// The marker occupies the slot between the name and the colon, which stays
-	// a single space wide when there is no marker: `nav ?:` but `boot :`.
+	if kind == KindModel {
+		writeModelTail(sb, ft)
+	} else {
+		writeConfigTail(sb, ft)
+	}
+
+	sb.WriteByte('\n')
+
+	// A constraint is written one level in from the feature it applies to.
+	for _, c := range ft.Constraints {
+		sb.WriteString(strings.Repeat(" ", (depth+1)*IndentUnit))
+		if c.Negated {
+			sb.WriteByte('!')
+		}
+		sb.WriteByte('[')
+		sb.WriteString(strings.Join(names(c.Operands), " "+c.Op.String()+" "))
+		sb.WriteString("]\n")
+	}
+
+	for _, child := range ft.Children {
+		if !writeEntry(sb, kind, child, depth+1) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// writeModelTail writes `: type [{mode time}] [(value)] [?]`.
+func writeModelTail(sb *strings.Builder, ft *Feature) {
+	sb.WriteString(" : ")
+	sb.WriteString(ft.Type.String())
+
+	if ft.HasBindings {
+		sb.WriteString(" {" + ft.Mode.String() + " " + ft.Time.String() + "}")
+	}
+	if ft.HasDefault {
+		sb.WriteString(" (" + ft.Default + ")")
+	}
+	if ft.Optional {
+		sb.WriteString(" ?")
+	}
+}
+
+// writeConfigTail writes `[marker][{mode time}] [(value)]`, where the marker
+// sits against the braces: `nav *{static early}` but `boot {static late}`.
+func writeConfigTail(sb *strings.Builder, ft *Feature) {
+	if !ft.HasMarker && !ft.HasBindings && !ft.HasDefault {
+		return
+	}
+
 	sb.WriteByte(' ')
 
 	switch {
@@ -67,17 +131,13 @@ func writeEntry(sb *strings.Builder, ft *Feature, depth int) bool {
 		sb.WriteByte('*')
 	}
 
-	sb.WriteString(": ")
-	sb.WriteString(ft.Mode.String())
-	sb.WriteByte(' ')
-	sb.WriteString(ft.Time.String())
-	sb.WriteByte('\n')
-
-	for _, child := range ft.Children {
-		if !writeEntry(sb, child, depth+1) {
-			return false
-		}
+	if ft.HasBindings {
+		sb.WriteString("{" + ft.Mode.String() + " " + ft.Time.String() + "}")
 	}
-
-	return true
+	if ft.HasDefault {
+		if ft.HasBindings {
+			sb.WriteByte(' ')
+		}
+		sb.WriteString("(" + ft.Default + ")")
+	}
 }

@@ -14,11 +14,11 @@ import (
 	"github.com/isselab/featxsuite/featx-lsp/internal/lsp"
 )
 
-const modelSrc = `feature_model: RB-1-BASE
-    xor navigation ?: static early
-        to_loading : dynamic late
-        to_delivery : dynamic late
-    boot : static late
+const modelSrc = `RB-1-BASE:
+    xor navigation : node {static early} ?
+        to_loading : node {dynamic late}
+        to_delivery : node {dynamic late}
+    boot : node {static late}
 `
 
 // session scripts a client: it frames the given messages, runs the server to
@@ -138,7 +138,7 @@ func TestDidOpenPublishesSyntaxDiagnostics(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
 
 	s := newSession()
-	s.open(t, uri, "feature_model: M\n    nav: static\n")
+	s.open(t, uri, "M:\n    nav : node {static}\n")
 
 	diags := diagnosticsFor(t, s.run(t), uri)
 
@@ -151,11 +151,11 @@ func TestDidChangeRepublishes(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
 
 	s := newSession()
-	s.open(t, uri, "feature_model: M\n    nav: static\n")
+	s.open(t, uri, "M:\n    nav : node {static}\n")
 	s.notify(t, "textDocument/didChange", lsp.DidChangeTextDocumentParams{
 		TextDocument: lsp.VersionedTextDocumentIdentifier{URI: uri, Version: 2},
 		ContentChanges: []lsp.TextDocumentContentChangeEvent{
-			{Text: "feature_model: M\n    nav: static early\n"},
+			{Text: "M:\n    nav: node {static early}\n"},
 		},
 	})
 
@@ -174,7 +174,7 @@ func TestDidCloseClearsDiagnostics(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
 
 	s := newSession()
-	s.open(t, uri, "feature_model: M\n    nav: static\n")
+	s.open(t, uri, "M:\n    nav : node {static}\n")
 	s.notify(t, "textDocument/didClose", lsp.DidCloseTextDocumentParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
 	})
@@ -195,11 +195,11 @@ func TestCrossFileDiagnostics(t *testing.T) {
 	}
 
 	configPath := filepath.Join(dir, "configs.ftx")
-	configSrc := "feature_config:\n" +
-		"    navigation *: dynamic early\n" +
-		"    to_loading *: dynamic late\n" +
-		"    to_delivery *: dynamic late\n" +
-		"    nonsense : static late\n"
+	configSrc := "" +
+		"    navigation *{dynamic early}\n" +
+		"    to_loading *{dynamic late}\n" +
+		"    to_delivery *{dynamic late}\n" +
+		"    nonsense {static late}\n"
 
 	if err := os.WriteFile(configPath, []byte(configSrc), 0o644); err != nil {
 		t.Fatal(err)
@@ -232,16 +232,16 @@ func TestHoverShowsModelDeclaration(t *testing.T) {
 	}
 
 	configPath := filepath.Join(dir, "configs.ftx")
-	configSrc := "feature_config:\n    navigation *: static early\n"
+	configSrc := "navigation *{static early}\n"
 	uri := pathToURI(configPath)
 
 	s := newSession()
 	s.open(t, uri, configSrc)
 
-	// Line 1, character 6 is inside "navigation".
+	// Line 0, character 6 is inside "navigation".
 	id := s.request(t, "textDocument/hover", lsp.TextDocumentPositionParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
-		Position:     lsp.Position{Line: 1, Character: 6},
+		Position:     lsp.Position{Line: 0, Character: 6},
 	})
 
 	var hover lsp.Hover
@@ -266,11 +266,11 @@ func TestDefinitionJumpsToTheModel(t *testing.T) {
 	uri := pathToURI(configPath)
 
 	s := newSession()
-	s.open(t, uri, "feature_config:\n    to_loading : dynamic late\n")
+	s.open(t, uri, "to_loading {dynamic late}\n")
 
 	id := s.request(t, "textDocument/definition", lsp.TextDocumentPositionParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
-		Position:     lsp.Position{Line: 1, Character: 6},
+		Position:     lsp.Position{Line: 0, Character: 6},
 	})
 
 	var loc lsp.Location
@@ -299,11 +299,18 @@ func TestDocumentSymbolNests(t *testing.T) {
 	var syms []lsp.DocumentSymbol
 	decodeResult(t, s.run(t), id, &syms)
 
-	if len(syms) != 2 {
-		t.Fatalf("len(syms) = %d, want 2 (navigation, boot)", len(syms))
+	// The outline mirrors the document: the root feature, then its children.
+	if len(syms) != 1 {
+		t.Fatalf("len(syms) = %d, want 1 (the root feature)", len(syms))
+	}
+	if syms[0].Name != "RB-1-BASE" {
+		t.Errorf("syms[0].Name = %q, want the root feature", syms[0].Name)
+	}
+	if len(syms[0].Children) != 2 {
+		t.Fatalf("root has %d children, want 2 (navigation, boot)", len(syms[0].Children))
 	}
 
-	nav := syms[0]
+	nav := syms[0].Children[0]
 	if nav.Name != "navigation" {
 		t.Errorf("syms[0].Name = %q", nav.Name)
 	}
@@ -324,7 +331,7 @@ func TestFormattingReturnsAnEdit(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
 
 	s := newSession()
-	s.open(t, uri, "feature_model:   M\n  nav   :  static   early\n")
+	s.open(t, uri, "M:\n  nav   :  node{static   early}\n")
 
 	id := s.request(t, "textDocument/formatting", lsp.DocumentFormattingParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
@@ -336,7 +343,7 @@ func TestFormattingReturnsAnEdit(t *testing.T) {
 	if len(edits) != 1 {
 		t.Fatalf("len(edits) = %d, want 1", len(edits))
 	}
-	if want := "feature_model: M\n    nav : static early\n"; edits[0].NewText != want {
+	if want := "M:\n    nav : node {static early}\n"; edits[0].NewText != want {
 		t.Errorf("NewText = %q, want %q", edits[0].NewText, want)
 	}
 }
@@ -345,7 +352,7 @@ func TestFormattingRefusesBrokenDocument(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
 
 	s := newSession()
-	s.open(t, uri, "feature_model: M\n    nav: static\n")
+	s.open(t, uri, "M:\n    nav : node {static}\n")
 
 	id := s.request(t, "textDocument/formatting", lsp.DocumentFormattingParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
@@ -359,17 +366,44 @@ func TestFormattingRefusesBrokenDocument(t *testing.T) {
 	}
 }
 
-func TestCompletionOffersBindingsAfterColon(t *testing.T) {
+func TestCompletionOffersTypesAfterColon(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
-	src := "feature_model: M\n    nav : static \n"
+	src := "M:\n    nav : \n"
 
 	s := newSession()
 	s.open(t, uri, src)
 
-	// End of line 1, where a binding time is still missing.
 	id := s.request(t, "textDocument/completion", lsp.TextDocumentPositionParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
-		Position:     lsp.Position{Line: 1, Character: len("    nav : static ")},
+		Position:     lsp.Position{Line: 1, Character: len("    nav : ")},
+	})
+
+	var list lsp.CompletionList
+	decodeResult(t, s.run(t), id, &list)
+
+	labels := labelsOf(list.Items)
+
+	for _, want := range []string{"node", "number", "string", "bool"} {
+		if !contains(labels, want) {
+			t.Errorf("labels = %v, want %q", labels, want)
+		}
+	}
+	if contains(labels, "static") {
+		t.Errorf("labels = %v: a binding word is not legal before the braces", labels)
+	}
+}
+
+func TestCompletionOffersBindingsInsideBraces(t *testing.T) {
+	uri := "file:///tmp/features.ftx"
+	src := "M:\n    nav : node {static \n"
+
+	s := newSession()
+	s.open(t, uri, src)
+
+	// Inside the braces, where a binding time is still missing.
+	id := s.request(t, "textDocument/completion", lsp.TextDocumentPositionParams{
+		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
+		Position:     lsp.Position{Line: 1, Character: len("    nav : node {static ")},
 	})
 
 	var list lsp.CompletionList
@@ -383,13 +417,43 @@ func TestCompletionOffersBindingsAfterColon(t *testing.T) {
 	if contains(labels, "static") || contains(labels, "dynamic") {
 		t.Errorf("labels = %v, should not re-offer a mode that is already set", labels)
 	}
+	if contains(labels, "node") {
+		t.Errorf("labels = %v: a type is not legal inside the braces", labels)
+	}
+}
+
+func TestCompletionOffersFeatureNamesInsideAConstraint(t *testing.T) {
+	uri := "file:///tmp/features.ftx"
+	src := modelSrc + "    [\n"
+
+	s := newSession()
+	s.open(t, uri, src)
+
+	line := strings.Count(modelSrc, "\n")
+
+	id := s.request(t, "textDocument/completion", lsp.TextDocumentPositionParams{
+		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
+		Position:     lsp.Position{Line: line, Character: len("    [")},
+	})
+
+	var list lsp.CompletionList
+	decodeResult(t, s.run(t), id, &list)
+
+	labels := labelsOf(list.Items)
+
+	if !contains(labels, "to_loading") || !contains(labels, "boot") {
+		t.Errorf("labels = %v, want the model's own feature names", labels)
+	}
+	if contains(labels, "node") {
+		t.Errorf("labels = %v: a type is not a constraint operand", labels)
+	}
 }
 
 func TestCompletionOffersGroupingAtLineStart(t *testing.T) {
 	uri := "file:///tmp/features.ftx"
 
 	s := newSession()
-	s.open(t, uri, "feature_model: M\n    \n")
+	s.open(t, uri, "M:\n    \n")
 
 	id := s.request(t, "textDocument/completion", lsp.TextDocumentPositionParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},
@@ -416,7 +480,7 @@ func TestCompletionOffersUnconfiguredFeatures(t *testing.T) {
 	uri := pathToURI(configPath)
 
 	s := newSession()
-	s.open(t, uri, "feature_config:\n    navigation *: static early\n    \n")
+	s.open(t, uri, "navigation *{static early}\n\n")
 
 	id := s.request(t, "textDocument/completion", lsp.TextDocumentPositionParams{
 		TextDocument: lsp.TextDocumentIdentifier{URI: uri},

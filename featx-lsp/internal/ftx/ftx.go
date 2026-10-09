@@ -1,23 +1,31 @@
 // Package ftx parses and analyses the FeatX feature-modelling DSL.
 //
-// Two document kinds share one grammar. A feature model declares the tree of
-// available features and the bindings each one allows:
+// A feature model opens with its root feature and declares the tree of
+// available features, the type of each and the bindings it allows:
 //
-//	feature_model: RB-1-BASE
-//	    xor navigation ?: static early
-//	        to_loading : dynamic late
+//	RB-1-BASE:
+//	    xor navigation : node {static early} ?
+//	        vel_max : number (1.6)
+//	        to_loading : node {dynamic late}
+//	            [square && attach && lift]
+//
+// A model entry is `[grouping] name : type [{mode time}] [(value)] [?]`, where
+// the grouping (or|xor) constrains the entry's children, `?` marks the feature
+// optional, and a bracketed line one level further in carries the cross-tree
+// constraints: `[a && b]` requires, `![a]` excludes.
 //
 // A feature configuration selects from that tree and fixes the binding each
-// feature is actually given:
+// node is actually given:
 //
 //	feature_config:
-//	    navigation *: static early
-//	    to_loading : dynamic late
+//	    navigation *{static early}
+//	    vel_max *
 //
-// An entry is `[grouping] name [marker]: <mode> <time>`, where the grouping
-// (or|xor) constrains the entry's children, the marker is `?` for an optional
-// feature or `*` for a selected one, mode is static|dynamic and time is
-// early|late. Nesting is expressed with indentation.
+// A configuration entry is `name [marker] [{mode time}] [(value)]`: it
+// restates neither the type nor the grouping, `*` marks the feature selected,
+// and a typed parameter takes no binding because it is bound with its node.
+//
+// Nesting is expressed with indentation in both dialects.
 package ftx
 
 import "fmt"
@@ -46,6 +54,58 @@ func (k Kind) String() string {
 		return "feature configuration"
 	default:
 		return "unknown"
+	}
+}
+
+// Type is a feature's declared type. A node feature is a bindable unit of
+// behaviour; the others are typed parameters of the node that encloses them.
+type Type int
+
+const (
+	TypeUnset Type = iota
+	TypeNode
+	TypeNumber
+	TypeString
+	TypeBool
+)
+
+func (t Type) String() string {
+	switch t {
+	case TypeNode:
+		return "node"
+	case TypeNumber:
+		return "number"
+	case TypeString:
+		return "string"
+	case TypeBool:
+		return "bool"
+	default:
+		return ""
+	}
+}
+
+// IsValue reports whether the type carries a value rather than behaviour.
+func (t Type) IsValue() bool {
+	return t == TypeNumber || t == TypeString || t == TypeBool
+}
+
+// Op is the connective joining the operands of a constraint.
+type Op int
+
+const (
+	OpNone Op = iota // a single operand
+	OpAnd            // &&
+	OpOr             // ||
+)
+
+func (o Op) String() string {
+	switch o {
+	case OpAnd:
+		return "&&"
+	case OpOr:
+		return "||"
+	default:
+		return ""
 	}
 }
 
@@ -139,6 +199,52 @@ type Diagnostic struct {
 	Message  string
 }
 
+// Ref is a reference from one entry to another feature by name, carrying its
+// source span so that a bad reference can be reported where it was written
+// rather than on the whole line.
+type Ref struct {
+	Name  string
+	Range Range
+}
+
+// names projects refs onto their names, in source order.
+func names(refs []Ref) []string {
+	out := make([]string, len(refs))
+	for i, r := range refs {
+		out[i] = r.Name
+	}
+	return out
+}
+
+// Constraint is a bracketed line attached to the feature above it: `[a && b]`
+// requires every operand, `[a || b]` requires one of them, and the `!` prefix
+// turns either into an exclusion.
+type Constraint struct {
+	Negated  bool
+	Op       Op
+	Operands []Ref
+
+	// Range covers the whole bracketed expression, Line the line it sits on.
+	Range Range
+	Line  int
+}
+
+// Keyword names the constraint for diagnostics.
+func (c Constraint) Keyword() string {
+	if c.Negated {
+		return "![...]"
+	}
+	return "[...]"
+}
+
+// Kind names what the constraint does, for prose.
+func (c Constraint) Kind() string {
+	if c.Negated {
+		return "excludes"
+	}
+	return "requires"
+}
+
 // Feature is one entry in a model or configuration.
 type Feature struct {
 	Name      string
@@ -153,10 +259,31 @@ type Feature struct {
 	HasMarker   bool
 	MarkerRange Range
 
-	Mode      Mode
-	ModeRange Range
-	Time      Time
-	TimeRange Range
+	// IsRoot marks the topmost feature of a model, which is declared as
+	// `NAME:` and needs no type: nothing binds or configures it.
+	IsRoot bool
+
+	Type      Type
+	TypeRange Range
+
+	// Bindings are written in braces and are mandatory on a node, which has
+	// nothing else to say when it is bound. A value feature without them is
+	// bound with the node that encloses it.
+	HasBindings bool
+	Mode        Mode
+	ModeRange   Range
+	Time        Time
+	TimeRange   Range
+
+	// Default is the literal in parentheses, verbatim. In a configuration it
+	// is the value chosen rather than a fallback.
+	HasDefault   bool
+	Default      string
+	DefaultRange Range
+
+	// Constraints are the bracketed lines that followed this entry, in source
+	// order, each either a requirement or an exclusion.
+	Constraints []Constraint
 
 	Indent   int
 	Parent   *Feature
@@ -167,18 +294,60 @@ type Feature struct {
 	Line int
 }
 
-// Depth is the feature's nesting level, 0 for a top-level entry.
+// Depth is the feature's nesting level, 0 for a top-level entry. The root is
+// not counted: it is the document, not a level of nesting.
 func (f *Feature) Depth() int {
 	d := 0
-	for p := f.Parent; p != nil; p = p.Parent {
+	for p := f.Parent; p != nil && !p.IsRoot; p = p.Parent {
 		d++
 	}
 	return d
 }
 
+// IsAncestorOf reports whether f encloses other through the nesting.
+func (f *Feature) IsAncestorOf(other *Feature) bool {
+	for p := other.Parent; p != nil; p = p.Parent {
+		if p == f {
+			return true
+		}
+	}
+	return false
+}
+
 // Binding renders the feature's binding pair as it appears in source.
 func (f *Feature) Binding() string {
 	return fmt.Sprintf("%s %s", f.Mode, f.Time)
+}
+
+// BindingNode walks outwards to the node whose bindings govern this feature,
+// which is the feature itself when it declares its own.
+func (f *Feature) BindingNode() *Feature {
+	for n := f; n != nil; n = n.Parent {
+		if n.HasBindings {
+			return n
+		}
+	}
+	return nil
+}
+
+// Requires returns the constraints this feature must satisfy.
+func (f *Feature) Requires() []Constraint {
+	return f.constraints(false)
+}
+
+// Excludes returns the constraints this feature must not satisfy.
+func (f *Feature) Excludes() []Constraint {
+	return f.constraints(true)
+}
+
+func (f *Feature) constraints(negated bool) []Constraint {
+	var out []Constraint
+	for _, c := range f.Constraints {
+		if c.Negated == negated {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // File is a parsed document.
@@ -196,6 +365,16 @@ type File struct {
 	// Diagnostics holds the syntax problems found while parsing. Semantic
 	// problems come from Analyze and CrossCheck.
 	Diagnostics []Diagnostic
+}
+
+// TopLevel returns the entries beneath the root feature, or the roots
+// themselves when the document declares none (a configuration, or a model
+// whose first line failed to parse).
+func (f *File) TopLevel() []*Feature {
+	if len(f.Roots) == 1 && f.Roots[0].IsRoot {
+		return f.Roots[0].Children
+	}
+	return f.Roots
 }
 
 // Lookup returns the feature with the given name, if the document declares it.

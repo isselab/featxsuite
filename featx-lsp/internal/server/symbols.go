@@ -64,8 +64,16 @@ func detailFor(feature *ftx.Feature) string {
 		parts = append(parts, feature.Grouping.String())
 	}
 
-	if feature.Mode != ftx.ModeUnset && feature.Time != ftx.TimeUnset {
+	if feature.Type != ftx.TypeUnset {
+		parts = append(parts, feature.Type.String())
+	}
+
+	if feature.HasBindings && feature.Mode != ftx.ModeUnset && feature.Time != ftx.TimeUnset {
 		parts = append(parts, feature.Binding())
+	}
+
+	if feature.HasDefault {
+		parts = append(parts, "= "+feature.Default)
 	}
 
 	switch {

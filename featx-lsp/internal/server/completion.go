@@ -30,6 +30,18 @@ var (
 		{Label: "or", Kind: lsp.CompletionItemKindKeyword, Detail: "grouping",
 			Documentation: "One or more of this feature's children may be selected."},
 	}
+
+	typeItems = []lsp.CompletionItem{
+		{Label: "node", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A bindable unit of behaviour. Its bindings follow in braces.",
+			InsertText:    "node {"},
+		{Label: "number", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A numeric parameter of the enclosing node."},
+		{Label: "string", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A textual parameter of the enclosing node."},
+		{Label: "bool", Kind: lsp.CompletionItemKindKeyword, Detail: "type",
+			Documentation: "A true/false parameter of the enclosing node."},
+	}
 )
 
 func (s *Server) completion(m *jsonrpc.Message) error {
@@ -55,12 +67,23 @@ func (s *Server) completion(m *jsonrpc.Message) error {
 	return s.conn.Reply(m.ID, lsp.CompletionList{Items: items})
 }
 
-// completionsFor picks candidates from where the cursor sits on the line: past
-// the colon only bindings are legal, at the start of a line a grouping or a
-// feature name is, and in between only a name.
+// completionsFor picks candidates from where the cursor sits on the line:
+// inside unclosed braces only binding words are legal, past the colon a type
+// is, inside a bracketed constraint a feature name is, and at the start of a
+// line a grouping or a feature name.
 func (s *Server) completionsFor(file *ftx.File, uri, prefix string) []lsp.CompletionItem {
-	if colon := strings.LastIndex(prefix, ":"); colon >= 0 {
-		return bindingCompletions(prefix[colon+1:])
+	// Braces bind tightest: a cursor inside them wants a mode or a time.
+	if open := strings.LastIndex(prefix, "{"); open > strings.LastIndex(prefix, "}") {
+		return bindingCompletions(prefix[open+1:])
+	}
+
+	// A bracketed constraint takes the names of other features.
+	if open := strings.LastIndex(prefix, "["); open > strings.LastIndex(prefix, "]") {
+		return s.declaredFeatures(file, uri)
+	}
+
+	if strings.LastIndex(prefix, ":") >= 0 {
+		return typeItems
 	}
 
 	var items []lsp.CompletionItem
@@ -76,12 +99,39 @@ func (s *Server) completionsFor(file *ftx.File, uri, prefix string) []lsp.Comple
 	return items
 }
 
-// bindingCompletions offers the binding words still missing from the entry, so
-// that a line already naming a mode only offers times.
-func bindingCompletions(afterColon string) []lsp.CompletionItem {
+// declaredFeatures offers the names a constraint can refer to, which in a
+// model are the model's own features.
+func (s *Server) declaredFeatures(file *ftx.File, uri string) []lsp.CompletionItem {
+	source := file
+	if file.Kind == ftx.KindConfig {
+		if model, _ := s.resolveModel(uri); model != nil {
+			source = model
+		}
+	}
+
+	var items []lsp.CompletionItem
+
+	for _, ft := range source.Order {
+		if ft.Name == "" {
+			continue
+		}
+
+		items = append(items, lsp.CompletionItem{
+			Label:  ft.Name,
+			Kind:   lsp.CompletionItemKindProperty,
+			Detail: ft.Type.String(),
+		})
+	}
+
+	return items
+}
+
+// bindingCompletions offers the binding words still missing from the braces,
+// so that one already naming a mode only offers times.
+func bindingCompletions(inBraces string) []lsp.CompletionItem {
 	var haveMode, haveTime bool
 
-	for _, word := range strings.Fields(afterColon) {
+	for _, word := range strings.Fields(inBraces) {
 		switch word {
 		case "static", "dynamic":
 			haveMode = true
@@ -100,6 +150,20 @@ func bindingCompletions(afterColon string) []lsp.CompletionItem {
 	}
 
 	return items
+}
+
+// entryDetail renders a feature as a configuration entry would declare it.
+func entryDetail(ft *ftx.Feature) string {
+	out := ft.Type.String()
+
+	if ft.HasBindings {
+		out += " {" + ft.Binding() + "}"
+	}
+	if ft.HasDefault {
+		out += " (" + ft.Default + ")"
+	}
+
+	return out
 }
 
 // unconfiguredFeatures offers model features the configuration has no entry
@@ -123,9 +187,9 @@ func (s *Server) unconfiguredFeatures(cfg *ftx.File, uri string) []lsp.Completio
 		items = append(items, lsp.CompletionItem{
 			Label:         declared.Name,
 			Kind:          lsp.CompletionItemKindProperty,
-			Detail:        fmt.Sprintf("%s %s", declared.Mode, declared.Time),
+			Detail:        entryDetail(declared),
 			Documentation: fmt.Sprintf("Declared in feature model %q.", model.ModelName),
-			InsertText:    fmt.Sprintf("%s: %s %s", declared.Name, declared.Mode, declared.Time),
+			InsertText:    declared.Name + " : " + entryDetail(declared),
 		})
 	}
 

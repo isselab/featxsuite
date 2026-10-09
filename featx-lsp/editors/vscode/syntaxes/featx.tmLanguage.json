@@ -3,30 +3,108 @@
   "name": "FeatX",
   "scopeName": "source.featx",
   "patterns": [
-    { "include": "#header" },
-    { "include": "#entry" }
+    {
+      "include": "#root"
+    },
+    {
+      "include": "#constraint"
+    },
+    {
+      "include": "#configEntry"
+    },
+    {
+      "include": "#entry"
+    }
   ],
   "repository": {
-    "header": {
-      "match": "^\\s*(feature_model|feature_config)\\s*(:)\\s*([\\w.-]+)?",
+    "constraint": {
+      "comment": "A bracketed line below an entry: [a && b] requires, ![a] excludes.",
+      "match": "^\\s*(!)?(\\[)([^\\]]*)(\\])?\\s*$",
       "captures": {
-        "1": { "name": "keyword.control.featx" },
-        "2": { "name": "punctuation.separator.key-value.featx" },
-        "3": { "name": "entity.name.type.featx" }
+        "1": {
+          "name": "keyword.operator.logical.not.featx"
+        },
+        "2": {
+          "name": "punctuation.section.brackets.begin.featx"
+        },
+        "3": {
+          "patterns": [
+            {
+              "include": "#operands"
+            }
+          ]
+        },
+        "4": {
+          "name": "punctuation.section.brackets.end.featx"
+        }
       }
+    },
+    "operands": {
+      "patterns": [
+        {
+          "match": "&&|\\|\\|",
+          "name": "keyword.operator.logical.featx"
+        },
+        {
+          "match": "[A-Za-z_][\\w.-]*",
+          "name": "variable.other.featx"
+        }
+      ]
     },
     "entry": {
+      "comment": "A model entry: name, marker, colon, then the type and its braces.",
       "match": "^\\s*(?:(or|xor)\\s+)?([\\w.-]+)\\s*([?*])?\\s*(:)\\s*(.*)$",
       "captures": {
-        "1": { "name": "keyword.operator.grouping.featx" },
-        "2": { "name": "entity.name.function.featx" },
-        "3": { "name": "keyword.operator.marker.featx" },
-        "4": { "name": "punctuation.separator.key-value.featx" },
-        "5": { "patterns": [{ "include": "#binding" }] }
+        "1": {
+          "name": "keyword.operator.grouping.featx"
+        },
+        "2": {
+          "name": "entity.name.function.featx"
+        },
+        "3": {
+          "name": "keyword.operator.marker.featx"
+        },
+        "4": {
+          "name": "punctuation.separator.key-value.featx"
+        },
+        "5": {
+          "patterns": [
+            {
+              "include": "#tail"
+            }
+          ]
+        }
       }
     },
-    "binding": {
+    "configEntry": {
+      "comment": "A configuration entry has no colon and no type: `navigation *{static early}`, or just `vel_max *` for a parameter bound with its node.",
+      "match": "^\\s*(?:(or|xor)\\s+)?([\\w.-]+)\\s*([?*])?\\s*((?:\\{[^}]*\\}?|\\([^)]*\\)?)*)\\s*$",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.grouping.featx"
+        },
+        "2": {
+          "name": "entity.name.function.featx"
+        },
+        "3": {
+          "name": "keyword.operator.marker.featx"
+        },
+        "4": {
+          "patterns": [
+            {
+              "include": "#tail"
+            }
+          ]
+        }
+      }
+    },
+    "tail": {
+      "comment": "The type, then the braced bindings and the parenthesised value. Flagging a bad word is left to the language server, which reports it with a precise range.",
       "patterns": [
+        {
+          "match": "\\b(node|number|string|bool)\\b",
+          "name": "storage.type.featx"
+        },
         {
           "match": "\\b(static|dynamic)\\b",
           "name": "support.type.binding-mode.featx"
@@ -36,10 +114,50 @@
           "name": "support.constant.binding-time.featx"
         },
         {
-          "match": "\\S+",
-          "name": "invalid.illegal.binding.featx"
+          "match": "[{}]",
+          "name": "punctuation.section.braces.featx"
+        },
+        {
+          "begin": "\\(",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.begin.featx"
+            }
+          },
+          "end": "\\)|$",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.end.featx"
+            }
+          },
+          "patterns": [
+            {
+              "match": "\\b(true|false)\\b",
+              "name": "constant.language.boolean.featx"
+            },
+            {
+              "match": "[-+]?\\d+(\\.\\d+)?([eE][-+]?\\d+)?",
+              "name": "constant.numeric.featx"
+            },
+            {
+              "match": "[^)]+",
+              "name": "string.unquoted.featx"
+            }
+          ]
         }
       ]
+    },
+    "root": {
+      "comment": "A model opens with its root feature: `RB-1-BASE:` and nothing else.",
+      "match": "^(?![ \\t])([\\w.-]+)\\s*(:)\\s*$",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.featx"
+        },
+        "2": {
+          "name": "punctuation.separator.key-value.featx"
+        }
+      }
     }
   }
 }

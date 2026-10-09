@@ -24,9 +24,12 @@ func Parse(src string) *File {
 		node   *Feature
 	}
 	var stack []level
-	var rootIndent = -1
+	rootIndent := -1
 
 	headerDone := false
+
+	// The feature a bracketed constraint line attaches to: the entry above it.
+	var last *Feature
 
 	for ln, raw := range strings.Split(src, "\n") {
 		line := strings.TrimRight(raw, "\r")
@@ -39,20 +42,52 @@ func Parse(src string) *File {
 			continue
 		}
 
+		indent := indentOf(line)
+
+		var ft *Feature
+
+		isConstraintLine := toks[0].text == "!" || toks[0].text == "["
+
 		if !headerDone {
 			headerDone = true
-			if f.parseHeader(ln, toks) {
+
+			if isConstraintLine {
+				// Neither dialect opens with a constraint, and a model must
+				// open with its root, so this can only be a configuration.
+				f.Kind = KindConfig
+				f.parseConstraint(ln, indent, toks, nil)
 				continue
 			}
-			// Not a header. Fall through so the line is still read as an entry
-			// and the rest of the document keeps parsing.
+
+			root, consumed := f.parseDocumentStart(ln, toks)
+			if consumed {
+				continue
+			}
+
+			if root != nil {
+				// A model opens with its root feature, which nests like any
+				// other entry; everything else hangs beneath it.
+				ft = root
+			} else {
+				// A configuration opens straight onto its first entry.
+				ft = f.parseEntry(ln, indent, toks)
+			}
+		} else if isConstraintLine {
+			// A constraint line belongs to the entry above it rather than
+			// opening a new one, so it never takes part in the nesting.
+			f.parseConstraint(ln, indent, toks, last)
+			continue
+		} else {
+			ft = f.parseEntry(ln, indent, toks)
 		}
 
-		indent := indentOf(line)
-		ft := f.parseEntry(ln, indent, toks)
 		if ft == nil {
 			continue
 		}
+
+		ft.Indent = indent
+		ft.Line = ln
+		last = ft
 
 		// Attach to the innermost open entry that is indented less than this one.
 		for len(stack) > 0 && stack[len(stack)-1].indent >= indent {
@@ -94,65 +129,100 @@ func Parse(src string) *File {
 		// A warning, not an error: an empty file is unfinished rather than
 		// wrong, and placeholders should not fail a batch check.
 		f.diag(SeverityWarning, Range{},
-			"empty document: expected a %q or %q header", headerModel+":", headerConfig+":")
+			"empty document: expected a root feature (%q) or a %q header", "NAME:", headerConfig+":")
 	}
 
 	return f
 }
 
-// parseHeader consumes the document header, reporting whether the line was one.
-func (f *File) parseHeader(ln int, toks []token) bool {
+// parseDocumentStart reads the first line, which decides the dialect. Neither
+// kind carries a header, so the root's colon is what tells them apart: a model
+// opens with `NAME:`, which needs no type because nothing binds or configures
+// the root, while a configuration opens straight onto its first entry.
+//
+// It returns the root feature for a model, and whether the line was consumed
+// without producing one. A configuration's first line is not consumed: it is
+// an entry and the caller parses it as one.
+func (f *File) parseDocumentStart(ln int, toks []token) (*Feature, bool) {
 	head := toks[0]
-	f.HeaderRange = rangeOf(ln, head)
 
+	// The old header forms are reported rather than read as feature names,
+	// since otherwise a stale file parses as a model called "feature_config".
 	switch head.text {
-	case headerModel:
-		f.Kind = KindModel
 	case headerConfig:
 		f.Kind = KindConfig
-	default:
 		f.diag(SeverityError, rangeOf(ln, head),
-			"expected the document to start with %q or %q, found %q",
-			headerModel+":", headerConfig+":", head.text)
-		return false
+			"a configuration no longer takes a header: delete this line and start with its first entry")
+		return nil, true
+
+	case headerModel:
+		f.Kind = KindModel
+		f.diag(SeverityError, rangeOf(ln, head),
+			"a model now opens with its root feature: write %q instead of %q",
+			"NAME:", headerModel+": NAME")
+		return nil, true
 	}
 
-	if len(toks) < 2 || toks[1].text != ":" {
-		f.diag(SeverityError, rangeOf(ln, head), "expected %q after %q", ":", head.text)
-		return true
+	// `NAME:` and nothing else is a root feature; anything else is an entry,
+	// and only a configuration opens with one of those.
+	isRootLine := len(toks) >= 2 && toks[1].text == ":"
+
+	if !isRootLine {
+		f.Kind = KindConfig
+		return nil, false
 	}
 
-	rest := toks[2:]
+	f.Kind = KindModel
+	f.HeaderRange = rangeOf(ln, head)
 
-	if f.Kind == KindConfig {
-		if len(rest) > 0 {
-			f.diag(SeverityError, rangeOf(ln, rest[0]),
-				"%q takes no name, found %q", headerConfig+":", rest[0].text)
-		}
-		return true
+	if !isName(head.text) {
+		f.diag(SeverityError, rangeOf(ln, head),
+			"expected a root feature name, found %q", head.text)
+		return nil, true
 	}
 
-	switch {
-	case len(rest) == 0:
-		f.diag(SeverityError, rangeOf(ln, toks[1]), "expected a model name after %q", headerModel+":")
-	case len(rest) > 1:
-		f.diag(SeverityError, rangeOf(ln, rest[1]),
-			"a model name cannot contain spaces, found %q", rest[1].text)
-	default:
-		f.ModelName = rest[0].text
-		f.ModelNameRange = rangeOf(ln, rest[0])
+	root := &Feature{
+		Name:      head.text,
+		NameRange: rangeOf(ln, head),
+		IsRoot:    true,
 	}
 
-	return true
+	f.ModelName = root.Name
+	f.ModelNameRange = root.NameRange
+
+	if rest := toks[2:]; len(rest) > 0 {
+		f.diag(SeverityError, rangeOf(ln, rest[0]),
+			"the root feature %q takes no type or binding, found %q", root.Name, rest[0].text)
+	}
+
+	return root, false
 }
 
-// parseEntry reads one feature entry. It returns nil only when the line has no
-// usable feature name.
+// parseEntry reads one entry in whichever dialect the header selected. The two
+// differ: a model declares a feature's type and what it allows, a
+// configuration only names a feature, marks it and fixes its binding.
 func (f *File) parseEntry(ln, indent int, toks []token) *Feature {
+	if f.Kind == KindConfig {
+		return f.parseConfigEntry(ln, indent, toks)
+	}
+	return f.parseModelEntry(ln, indent, toks)
+}
+
+// parseConfigEntry reads
+//
+//	NAME [marker] ["{" mode time "}"] ["(" literal ")"]
+//
+// as in `navigation *{static early}` or, for a typed parameter that is bound
+// with its node and so has no binding of its own, `vel_max *`. A configuration
+// restates neither the type nor the grouping, both of which belong to the
+// model; whether an entry ought to carry a binding depends on the type the
+// model gave it, so CrossCheck decides that rather than the parser.
+func (f *File) parseConfigEntry(ln, indent int, toks []token) *Feature {
 	ft := &Feature{Indent: indent, Line: ln}
 	i := 0
 
 	if g, ok := groupingFrom(toks[i].text); ok {
+		// Kept in the tree so Analyze can report it against the right range.
 		ft.Grouping = g
 		ft.GroupingRange = rangeOf(ln, toks[i])
 		i++
@@ -178,9 +248,73 @@ func (f *File) parseEntry(ln, indent int, toks []token) *Feature {
 		i++
 	}
 
+	if i < len(toks) && toks[i].text == ":" {
+		f.diag(SeverityError, rangeOf(ln, toks[i]),
+			"a configuration entry declares no type; write %q", ft.Name+" *{static early}")
+		return ft
+	}
+
+	for i < len(toks) {
+		switch toks[i].text {
+		case "{":
+			if ft.HasBindings {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"feature %q already declares its binding", ft.Name)
+			}
+			i = f.parseBindings(ln, ft, toks, i)
+		case "(":
+			if ft.HasDefault {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"feature %q already declares a value", ft.Name)
+			}
+			i = f.parseDefault(ln, ft, toks, i)
+		default:
+			f.diag(SeverityError, rangeOf(ln, toks[i]),
+				"unexpected %q after %q; a binding goes in %q and a value in %q",
+				toks[i].text, ft.Name, "{}", "()")
+			i++
+		}
+	}
+
+	return ft
+}
+
+// parseModelEntry reads
+//
+//	[grouping] NAME [marker] ":" type ["{" mode time "}"] ["(" literal ")"]
+//
+// It returns nil only when the line has no usable feature name.
+func (f *File) parseModelEntry(ln, indent int, toks []token) *Feature {
+	ft := &Feature{Indent: indent, Line: ln}
+	i := 0
+
+	if g, ok := groupingFrom(toks[i].text); ok {
+		ft.Grouping = g
+		ft.GroupingRange = rangeOf(ln, toks[i])
+		i++
+	}
+
+	if i >= len(toks) || !isName(toks[i].text) {
+		at := toks[len(toks)-1]
+		if i < len(toks) {
+			at = toks[i]
+		}
+		f.diag(SeverityError, rangeOf(ln, at), "expected a feature name, found %q", at.text)
+		return nil
+	}
+	ft.Name = toks[i].text
+	ft.NameRange = rangeOf(ln, toks[i])
+	i++
+
+	if i < len(toks) && (toks[i].text == "?" || toks[i].text == "*") {
+		f.diag(SeverityError, rangeOf(ln, toks[i]),
+			"%q goes at the end of the line, after the type", toks[i].text)
+		i++
+	}
+
 	if i >= len(toks) {
 		f.diag(SeverityError, ft.NameRange,
-			"expected %q and a binding after feature %q", ":", ft.Name)
+			"expected %q and a type after feature %q", ":", ft.Name)
 		return ft
 	}
 
@@ -192,20 +326,97 @@ func (f *File) parseEntry(ln, indent int, toks []token) *Feature {
 	colon := toks[i]
 	i++
 
-	f.parseBinding(ln, ft, colon, toks[i:])
+	if i >= len(toks) {
+		f.diag(SeverityError, rangeOf(ln, colon),
+			"expected a type (node|number|string|bool) after %q", ":")
+		return ft
+	}
+
+	t, ok := typeFrom(toks[i].text)
+	if !ok {
+		f.diag(SeverityError, rangeOf(ln, toks[i]),
+			"unknown type %q: expected node, number, string or bool", toks[i].text)
+		return ft
+	}
+	ft.Type = t
+	ft.TypeRange = rangeOf(ln, toks[i])
+	i++
+
+	// The braced binding pair, the parenthesised default and the trailing
+	// optional marker may appear in any order after the type.
+	for i < len(toks) {
+		switch toks[i].text {
+		case "{":
+			if ft.HasBindings {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"feature %q already declares its bindings", ft.Name)
+			}
+			i = f.parseBindings(ln, ft, toks, i)
+
+		case "(":
+			if ft.HasDefault {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"feature %q already declares a value", ft.Name)
+			}
+			i = f.parseDefault(ln, ft, toks, i)
+
+		case "?", "*":
+			if ft.HasMarker {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"feature %q already carries a marker", ft.Name)
+			}
+			ft.HasMarker = true
+			ft.Optional = toks[i].text == "?"
+			ft.Selected = toks[i].text == "*"
+			ft.MarkerRange = rangeOf(ln, toks[i])
+			i++
+
+		default:
+			f.diag(SeverityError, rangeOf(ln, toks[i]),
+				"unexpected %q after the type of %q; bindings go in %q, a value in %q and %q marks it optional",
+				toks[i].text, ft.Name, "{}", "()", "?")
+			i++
+		}
+	}
+
+	if ft.Type == TypeNode && !ft.HasBindings {
+		f.diag(SeverityError, ft.TypeRange,
+			"node %q must declare its bindings, as in %q", ft.Name, "{static early}")
+	}
+
 	return ft
 }
 
-// parseBinding reads the `<mode> <time>` pair that follows the colon. The two
-// are accepted in either order; exactly one of each must be present.
-func (f *File) parseBinding(ln int, ft *Feature, colon token, rest []token) {
-	if len(rest) == 0 {
-		f.diag(SeverityError, rangeOf(ln, colon),
-			"expected a binding mode (static|dynamic) and a binding time (early|late) after %q", ":")
-		return
+// parseBindings reads `{ mode time }`, accepting the pair in either order.
+func (f *File) parseBindings(ln int, ft *Feature, toks []token, i int) int {
+	open := toks[i]
+	i++
+
+	var inner []token
+	closed := false
+
+	for ; i < len(toks); i++ {
+		if toks[i].text == "}" {
+			closed = true
+			i++
+			break
+		}
+		inner = append(inner, toks[i])
 	}
 
-	for _, t := range rest {
+	if !closed {
+		f.diag(SeverityError, rangeOf(ln, open), "unclosed %q in feature %q", "{", ft.Name)
+	}
+
+	ft.HasBindings = true
+
+	if len(inner) == 0 {
+		f.diag(SeverityError, rangeOf(ln, open),
+			"expected a binding mode (static|dynamic) and a binding time (early|late) in %q", "{}")
+		return i
+	}
+
+	for _, t := range inner {
 		switch {
 		case isMode(t.text):
 			m, _ := modeFrom(t.text)
@@ -233,7 +444,7 @@ func (f *File) parseBinding(ln int, ft *Feature, colon token, rest []token) {
 		}
 	}
 
-	last := rangeOf(ln, rest[len(rest)-1])
+	last := rangeOf(ln, inner[len(inner)-1])
 
 	if ft.Mode == ModeUnset {
 		f.diag(SeverityError, last, "feature %q has no binding mode (static|dynamic)", ft.Name)
@@ -241,8 +452,173 @@ func (f *File) parseBinding(ln int, ft *Feature, colon token, rest []token) {
 	if ft.Time == TimeUnset {
 		f.diag(SeverityError, last, "feature %q has no binding time (early|late)", ft.Name)
 	}
+
+	return i
 }
 
+// parseDefault reads `( literal )`, keeping the literal verbatim so that the
+// type checker can judge it and the formatter can reproduce it.
+func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
+	open := toks[i]
+	i++
+
+	var inner []token
+	closed := false
+
+	for ; i < len(toks); i++ {
+		if toks[i].text == ")" {
+			closed = true
+			i++
+			break
+		}
+		inner = append(inner, toks[i])
+	}
+
+	if !closed {
+		f.diag(SeverityError, rangeOf(ln, open), "unclosed %q in feature %q", "(", ft.Name)
+	}
+
+	ft.HasDefault = true
+
+	if len(inner) == 0 {
+		f.diag(SeverityError, rangeOf(ln, open), "expected a value in %q", "()")
+		ft.DefaultRange = rangeOf(ln, open)
+		return i
+	}
+
+	parts := make([]string, len(inner))
+	for j, t := range inner {
+		parts[j] = t.text
+	}
+
+	ft.Default = strings.Join(parts, " ")
+	ft.DefaultRange = Range{
+		Line:      ln,
+		StartChar: inner[0].col,
+		EndChar:   inner[len(inner)-1].col + utf16Len(inner[len(inner)-1].text),
+	}
+
+	return i
+}
+
+// parseConstraint reads a bracketed line and attaches it to the entry above.
+func (f *File) parseConstraint(ln, indent int, toks []token, owner *Feature) {
+	c := Constraint{Line: ln}
+	i := 0
+
+	if toks[i].text == "!" {
+		c.Negated = true
+		i++
+
+		if i >= len(toks) || toks[i].text != "[" {
+			f.diag(SeverityError, rangeOf(ln, toks[0]),
+				"expected %q after %q to write an exclusion", "[", "!")
+			return
+		}
+	}
+
+	open := toks[i]
+	i++
+
+	var inner []token
+	closed := false
+
+	for ; i < len(toks); i++ {
+		if toks[i].text == "]" {
+			closed = true
+			i++
+			break
+		}
+		inner = append(inner, toks[i])
+	}
+
+	end := rangeOf(ln, open).EndChar
+	if closed {
+		end = toks[i-1].col + 1
+	}
+
+	c.Range = Range{Line: ln, StartChar: rangeOf(ln, toks[0]).StartChar, EndChar: end}
+
+	if !closed {
+		f.diag(SeverityError, c.Range, "unclosed %q in a constraint", "[")
+	}
+
+	if i < len(toks) {
+		f.diag(SeverityError, rangeOf(ln, toks[i]),
+			"unexpected %q after the constraint", toks[i].text)
+	}
+
+	if owner == nil {
+		f.diag(SeverityError, c.Range,
+			"a constraint must follow the feature it applies to")
+		return
+	}
+
+	if indent <= owner.Indent {
+		f.diag(SeverityWarning, c.Range,
+			"a constraint is written beneath the feature it applies to: indent it past %q at %d columns",
+			owner.Name, owner.Indent)
+	}
+
+	f.parseOperands(ln, &c, inner)
+
+	if len(c.Operands) == 0 {
+		return
+	}
+
+	owner.Constraints = append(owner.Constraints, c)
+}
+
+// parseOperands reads `NAME (("&&"|"||") NAME)*`. Mixing the two connectives
+// is rejected rather than given a precedence the notation does not define.
+func (f *File) parseOperands(ln int, c *Constraint, toks []token) {
+	wantName := true
+
+	for _, t := range toks {
+		if op, ok := opFrom(t.text); ok {
+			if wantName {
+				f.diag(SeverityError, rangeOf(ln, t), "expected a feature name before %q", t.text)
+				continue
+			}
+
+			if c.Op != OpNone && c.Op != op {
+				f.diag(SeverityError, rangeOf(ln, t),
+					"a constraint cannot mix %q and %q; split it into separate constraints",
+					c.Op, op)
+			} else {
+				c.Op = op
+			}
+
+			wantName = true
+			continue
+		}
+
+		if !wantName {
+			f.diag(SeverityError, rangeOf(ln, t),
+				"expected %q or %q between feature names, found %q", "&&", "||", t.text)
+		}
+
+		if !isName(t.text) {
+			f.diag(SeverityError, rangeOf(ln, t),
+				"%q is not a valid feature name in a constraint", t.text)
+			wantName = false
+			continue
+		}
+
+		c.Operands = append(c.Operands, Ref{Name: t.text, Range: rangeOf(ln, t)})
+		wantName = false
+	}
+
+	switch {
+	case len(c.Operands) == 0:
+		f.diag(SeverityError, c.Range, "a constraint needs at least one feature name")
+	case wantName:
+		f.diag(SeverityError, c.Range, "a constraint cannot end with %q", c.Op)
+	}
+}
+
+// tokenize splits a line, treating the notation's punctuation as separate
+// tokens so that `?:` and `{static` need no spaces around them.
 func tokenize(line string) []token {
 	var (
 		toks     []token
@@ -258,16 +634,30 @@ func tokenize(line string) []token {
 		}
 	}
 
-	for _, r := range line {
+	runes := []rune(line)
+
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
 		width := 1
 		if r > 0xFFFF {
 			width = 2
 		}
 
+		// The two-character connectives have to be recognised before the
+		// single characters, or `&&` becomes two unknown tokens.
+		if (r == '&' || r == '|') && i+1 < len(runes) && runes[i+1] == r {
+			flush()
+			toks = append(toks, token{text: string([]rune{r, r}), col: col})
+			i++
+			col += 2
+			continue
+		}
+
 		switch r {
 		case ' ', '\t':
 			flush()
-		case ':', '?', '*':
+		case ':', '?', '*', '{', '}', '(', ')', '[', ']', '!', '&', '|':
 			flush()
 			toks = append(toks, token{text: string(r), col: col})
 		default:
@@ -303,18 +693,20 @@ func rangeOf(line int, t token) Range {
 	return Range{Line: line, StartChar: t.col, EndChar: t.col + utf16Len(t.text)}
 }
 
-// isName reports whether s can be a feature or model name. Anything that is
-// not punctuation or a keyword qualifies, so that a misspelled binding is
-// reported as a bad binding rather than a bad name.
+// isName reports whether s can be a feature or model name. Punctuation, the
+// connectives and the type and binding keywords are excluded, so that a
+// misspelling is reported as what it was meant to be rather than as a name.
 func isName(s string) bool {
-	if s == "" || s == ":" || s == "?" || s == "*" {
+	switch s {
+	case "", ":", "?", "*", "{", "}", "(", ")", "[", "]", "!", "&", "|", "&&", "||":
 		return false
 	}
-	return !isMode(s) && !isTime(s)
+	return !isMode(s) && !isTime(s) && !isTypeName(s)
 }
 
-func isMode(s string) bool { _, ok := modeFrom(s); return ok }
-func isTime(s string) bool { _, ok := timeFrom(s); return ok }
+func isMode(s string) bool     { _, ok := modeFrom(s); return ok }
+func isTime(s string) bool     { _, ok := timeFrom(s); return ok }
+func isTypeName(s string) bool { _, ok := typeFrom(s); return ok }
 
 func groupingFrom(s string) (Grouping, bool) {
 	switch s {
@@ -344,4 +736,28 @@ func timeFrom(s string) (Time, bool) {
 		return TimeLate, true
 	}
 	return TimeUnset, false
+}
+
+func typeFrom(s string) (Type, bool) {
+	switch s {
+	case "node":
+		return TypeNode, true
+	case "number":
+		return TypeNumber, true
+	case "string":
+		return TypeString, true
+	case "bool":
+		return TypeBool, true
+	}
+	return TypeUnset, false
+}
+
+func opFrom(s string) (Op, bool) {
+	switch s {
+	case "&&":
+		return OpAnd, true
+	case "||":
+		return OpOr, true
+	}
+	return OpNone, false
 }

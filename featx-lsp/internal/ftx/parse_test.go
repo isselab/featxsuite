@@ -3,33 +3,45 @@ package ftx
 import "testing"
 
 // modelSrc mirrors featxcli/featxcli/model/features.ftx.
-const modelSrc = `feature_model: RB-1-BASE
-    xor navigation ?: static early
-        to_loading : dynamic late
-        to_delivery : dynamic late
-        to_base : dynamic late
-    xor elevator ?: static early
-        lift : dynamic late
-        drop : dynamic late
-    shelf ?: static early
-        attach ?: dynamic late
-    init_checks : static late
-    boot : static late
+const modelSrc = `RB-1-BASE:
+    xor navigation : node {static early} ?
+        vel_max : number (1.5)
+        to_loading : node {dynamic late}
+            [square && attach && lift]
+        to_delivery : node {dynamic late}
+            [circular && drop]
+        to_base : node {dynamic late}
+    xor elevator : node {static early} ?
+        lift : node {dynamic late}
+        drop : node {dynamic late}
+    shelf : node {static early} ?
+        attach : node {dynamic late} ?
+    init_checks : node {static late}
+        [boot && pose]
+    localization : node {static late}
+        pose : node {static late}
+    boot : node {static late}
+    square : node {dynamic late}
+    circular : node {dynamic late}
 `
 
 // configSrc mirrors featxcli/featxcli/model/configs.ftx.
-const configSrc = `feature_config:
-    navigation *: static early
-    to_loading : dynamic late
-    to_delivery : dynamic late
-    to_base : dynamic late
-    elevator *: static early
-    lift : dynamic late
-    drop : dynamic late
-    shelf *: static early
-    attach : dynamic late
-    init_checks : static late
-    boot : static late
+const configSrc = `navigation *{static early}
+vel_max *
+to_loading {dynamic late}
+to_delivery {dynamic late}
+to_base {dynamic late}
+elevator *{static early}
+lift {dynamic late}
+drop {dynamic late}
+shelf *{static early}
+attach {dynamic late}
+init_checks {static late}
+localization {static late}
+pose {static late}
+boot {static late}
+square {dynamic late}
+circular {dynamic late}
 `
 
 func TestParseModelHeader(t *testing.T) {
@@ -71,8 +83,11 @@ func TestParseEntryFields(t *testing.T) {
 	if !nav.Optional {
 		t.Error("Optional = false, want true")
 	}
-	if nav.Selected {
-		t.Error("Selected = true, want false")
+	if nav.Type != TypeNode {
+		t.Errorf("Type = %v, want node", nav.Type)
+	}
+	if !nav.HasBindings {
+		t.Error("HasBindings = false, want true")
 	}
 	if nav.Mode != ModeStatic {
 		t.Errorf("Mode = %v, want %v", nav.Mode, ModeStatic)
@@ -80,18 +95,93 @@ func TestParseEntryFields(t *testing.T) {
 	if nav.Time != TimeEarly {
 		t.Errorf("Time = %v, want %v", nav.Time, TimeEarly)
 	}
-	if got := len(nav.Children); got != 3 {
-		t.Fatalf("len(Children) = %d, want 3", got)
+	if nav.HasDefault {
+		t.Error("a node must not carry a default")
 	}
 
-	want := []string{"to_loading", "to_delivery", "to_base"}
+	want := []string{"vel_max", "to_loading", "to_delivery", "to_base"}
+	if got := len(nav.Children); got != len(want) {
+		t.Fatalf("len(Children) = %d, want %d", got, len(want))
+	}
 	for i, name := range want {
 		if got := nav.Children[i].Name; got != name {
 			t.Errorf("Children[%d].Name = %q, want %q", i, got, name)
 		}
-		if nav.Children[i].Parent != nav {
-			t.Errorf("Children[%d].Parent is not navigation", i)
+	}
+}
+
+func TestParseTypedParameter(t *testing.T) {
+	f := Parse(modelSrc)
+
+	vel, ok := f.Lookup("vel_max")
+	if !ok {
+		t.Fatal("vel_max not found")
+	}
+
+	if vel.Type != TypeNumber {
+		t.Errorf("Type = %v, want number", vel.Type)
+	}
+	if !vel.HasDefault {
+		t.Fatal("HasDefault = false, want true")
+	}
+	if vel.Default != "1.5" {
+		t.Errorf("Default = %q, want %q", vel.Default, "1.5")
+	}
+	if vel.HasBindings {
+		t.Error("HasBindings = true: vel_max declares none")
+	}
+
+	// With no bindings of its own, the enclosing node's apply.
+	if n := vel.BindingNode(); n == nil || n.Name != "navigation" {
+		t.Errorf("BindingNode = %v, want navigation", n)
+	}
+}
+
+func TestParseAllTypes(t *testing.T) {
+	src := "M:\n" +
+		"    root_node : node {static early}\n" +
+		"        n : number (1)\n" +
+		"        s : string (hello)\n" +
+		"        b : bool (true)\n"
+
+	f := Parse(src)
+	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	for _, tc := range []struct {
+		name string
+		typ  Type
+		def  string
+	}{
+		{"n", TypeNumber, "1"},
+		{"s", TypeString, "hello"},
+		{"b", TypeBool, "true"},
+	} {
+		ft, ok := f.Lookup(tc.name)
+		if !ok {
+			t.Errorf("%s not found", tc.name)
+			continue
 		}
+		if ft.Type != tc.typ {
+			t.Errorf("%s Type = %v, want %v", tc.name, ft.Type, tc.typ)
+		}
+		if ft.Default != tc.def {
+			t.Errorf("%s Default = %q, want %q", tc.name, ft.Default, tc.def)
+		}
+	}
+}
+
+func TestParseBindingsInEitherOrder(t *testing.T) {
+	f := Parse("M:\n    a : node {early static}\n")
+
+	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	a, _ := f.Lookup("a")
+	if a.Mode != ModeStatic || a.Time != TimeEarly {
+		t.Errorf("binding = %q, want %q", a.Binding(), "static early")
 	}
 }
 
@@ -103,6 +193,7 @@ func TestParseNestingDepth(t *testing.T) {
 		depth int
 	}{
 		{"navigation", 0},
+		{"vel_max", 1},
 		{"to_loading", 1},
 		{"shelf", 0},
 		{"attach", 1},
@@ -117,9 +208,30 @@ func TestParseNestingDepth(t *testing.T) {
 			t.Errorf("%s depth = %d, want %d", tc.name, got, tc.depth)
 		}
 	}
+}
 
-	if got := len(f.Roots); got != 5 {
-		t.Errorf("len(Roots) = %d, want 5", got)
+// TestParseConstraintLineDoesNotNest is the property that lets a constraint
+// sit at its feature's own indentation: it must not become a parent for the
+// entry that follows it.
+func TestParseConstraintLineDoesNotNest(t *testing.T) {
+	f := Parse(modelSrc)
+
+	for _, name := range []string{"to_delivery", "localization"} {
+		ft, ok := f.Lookup(name)
+		if !ok {
+			t.Fatalf("%s not found", name)
+		}
+
+		switch name {
+		case "to_delivery":
+			if ft.Parent == nil || ft.Parent.Name != "navigation" {
+				t.Errorf("%s.Parent = %v, want navigation", name, ft.Parent)
+			}
+		case "localization":
+			if ft.Parent == nil || !ft.Parent.IsRoot {
+				t.Errorf("%s.Parent is not the root feature", name)
+			}
+		}
 	}
 }
 
@@ -138,11 +250,8 @@ func TestParseSelectionMarker(t *testing.T) {
 	if !ok {
 		t.Fatal("lift not found")
 	}
-	if lift.Selected {
-		t.Error("lift Selected = true, want false")
-	}
-	if lift.HasMarker {
-		t.Error("lift HasMarker = true, want false")
+	if lift.Selected || lift.HasMarker {
+		t.Error("lift should carry no marker")
 	}
 }
 
@@ -153,54 +262,84 @@ func TestParseErrors(t *testing.T) {
 		want string
 	}{
 		{
-			name: "missing header",
-			src:  "navigation: static early\n",
-			want: `expected the document to start with "feature_model:" or "feature_config:", found "navigation"`,
+			name: "root feature with a type",
+			src:  "navigation: node {static early}\n",
+			want: `the root feature "navigation" takes no type or binding, found "node"`,
 		},
 		{
-			name: "model without a name",
-			src:  "feature_model:\n",
-			want: `expected a model name after "feature_model:"`,
+			name: "old header form",
+			src:  "feature_model: M\n",
+			want: `a model now opens with its root feature: write "NAME:" instead of "feature_model: NAME"`,
 		},
 		{
-			name: "config with a name",
-			src:  "feature_config: RB-1-BASE\n",
-			want: `"feature_config:" takes no name, found "RB-1-BASE"`,
+			name: "old configuration header",
+			src:  "feature_config:\n    navigation *{static early}\n",
+			want: `a configuration no longer takes a header: delete this line and start with its first entry`,
+		},
+		{
+			name: "missing type",
+			src:  "M:\n    nav:\n",
+			want: `expected a type (node|number|string|bool) after ":"`,
+		},
+		{
+			name: "unknown type",
+			src:  "M:\n    nav : widget {static early}\n",
+			want: `unknown type "widget": expected node, number, string or bool`,
+		},
+		{
+			name: "node without bindings",
+			src:  "M:\n    nav : node\n",
+			want: `node "nav" must declare its bindings, as in "{static early}"`,
 		},
 		{
 			name: "unknown binding word",
-			src:  "feature_model: M\n    nav: static sometimes\n",
+			src:  "M:\n    nav : node {static sometimes}\n",
 			want: `unknown binding "sometimes": expected static, dynamic, early or late`,
 		},
 		{
 			name: "missing binding time",
-			src:  "feature_model: M\n    nav: static\n",
+			src:  "M:\n    nav : node {static}\n",
 			want: `feature "nav" has no binding time (early|late)`,
 		},
 		{
-			name: "missing binding mode",
-			src:  "feature_model: M\n    nav: early\n",
-			want: `feature "nav" has no binding mode (static|dynamic)`,
+			name: "empty bindings",
+			src:  "M:\n    nav : node {}\n",
+			want: `expected a binding mode (static|dynamic) and a binding time (early|late) in "{}"`,
 		},
 		{
-			name: "no binding at all",
-			src:  "feature_model: M\n    nav:\n",
-			want: `expected a binding mode (static|dynamic) and a binding time (early|late) after ":"`,
+			name: "unclosed bindings",
+			src:  "M:\n    nav : node {static early\n",
+			want: `unclosed "{" in feature "nav"`,
 		},
 		{
 			name: "missing colon",
-			src:  "feature_model: M\n    nav static early\n",
-			want: `expected ":" after feature "nav", found "static"`,
+			src:  "M:\n    nav node {static early}\n",
+			want: `expected ":" after feature "nav", found "node"`,
 		},
 		{
 			name: "duplicate feature",
-			src:  "feature_model: M\n    nav: static early\n    nav: static early\n",
+			src:  "M:\n    nav : node {static early}\n    nav : node {static early}\n",
 			want: `feature "nav" is already declared on line 2`,
 		},
 		{
 			name: "two modes",
-			src:  "feature_model: M\n    nav: static dynamic\n",
+			src:  "M:\n    nav : node {static dynamic}\n",
 			want: `binding mode is already "static", found "dynamic"`,
+		},
+		{
+			name: "empty value",
+			src:  "M:\n    a : node {static early}\n        n : number ()\n",
+			want: `expected a value in "()"`,
+		},
+		{
+			name: "unclosed value",
+			src:  "M:\n    a : node {static early}\n        n : number (1\n",
+			want: `unclosed "(" in feature "n"`,
+		},
+		{
+			name: "junk after the type",
+			src:  "M:\n    nav : node static early\n",
+			want: `unexpected "static" after the type of "nav"; bindings go in "{}", a value in "()" and "?" marks it optional`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -213,7 +352,7 @@ func TestParseErrors(t *testing.T) {
 }
 
 func TestParseRecoversAfterBadLine(t *testing.T) {
-	src := "feature_model: M\n    broken\n    good: static early\n"
+	src := "M:\n    broken\n    good : node {static early}\n"
 
 	f := Parse(src)
 
@@ -222,72 +361,61 @@ func TestParseRecoversAfterBadLine(t *testing.T) {
 	}
 }
 
-func TestParseInconsistentIndentation(t *testing.T) {
-	src := "feature_model: M\n    a: static early\n      b: static early\n        c: static early\n"
-
-	f := Parse(src)
-
-	// b is a child of a; c is indented further still, so it is a child of b
-	// rather than a sibling, and nothing is inconsistent.
-	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
-		t.Errorf("unexpected errors: %v", errs)
-	}
-
-	b, ok := f.Lookup("b")
-	if !ok {
-		t.Fatal("b not found")
-	}
-	if b.Parent == nil || b.Parent.Name != "a" {
-		t.Errorf("b.Parent = %v, want a", b.Parent)
-	}
-}
-
 func TestParseSiblingIndentationMismatch(t *testing.T) {
-	// c is indented too shallow to be b's child but too deep to be a's
-	// sibling, so it lands beside b on a different column.
-	src := "feature_model: M\n    a: static early\n        b: static early\n      c: static early\n"
+	src := "M:\n    a : node {static early}\n" +
+		"        b : node {static early}\n      c : node {static early}\n"
 
 	f := Parse(src)
 
 	if !hasMessage(f.Diagnostics, `inconsistent indentation: "c" is indented 6 columns, its siblings 8`) {
 		t.Errorf("missing indentation warning; got %v", messages(f.Diagnostics))
 	}
-
-	c, ok := f.Lookup("c")
-	if !ok {
-		t.Fatal("c not found")
-	}
-	if c.Parent == nil || c.Parent.Name != "a" {
-		t.Errorf("c.Parent = %v, want a", c.Parent)
-	}
 }
 
-func TestTokenizeAdjacentMarker(t *testing.T) {
-	// `?:` has no space between the marker and the colon.
-	toks := tokenize("    xor navigation ?: static early")
+func TestTokenizeAdjacentPunctuation(t *testing.T) {
+	toks := tokenize("    xor navigation : node {static early} ?")
 
-	want := []string{"xor", "navigation", "?", ":", "static", "early"}
+	want := []string{"xor", "navigation", ":", "node", "{", "static", "early", "}", "?"}
 	if len(toks) != len(want) {
 		t.Fatalf("got %d tokens %v, want %d", len(toks), texts(toks), len(want))
 	}
-
 	for i, w := range want {
 		if toks[i].text != w {
 			t.Errorf("token %d = %q, want %q", i, toks[i].text, w)
 		}
 	}
+}
 
-	if toks[0].col != 4 {
-		t.Errorf("xor col = %d, want 4", toks[0].col)
+func TestTokenizeConnectives(t *testing.T) {
+	toks := tokenize("[square && attach || lift]")
+
+	want := []string{"[", "square", "&&", "attach", "||", "lift", "]"}
+	if len(toks) != len(want) {
+		t.Fatalf("got %v, want %v", texts(toks), want)
 	}
-	if toks[1].col != 8 {
-		t.Errorf("navigation col = %d, want 8", toks[1].col)
+	for i, w := range want {
+		if toks[i].text != w {
+			t.Errorf("token %d = %q, want %q", i, toks[i].text, w)
+		}
+	}
+}
+
+func TestTokenizeNegatedConstraint(t *testing.T) {
+	toks := tokenize("![circular]")
+
+	want := []string{"!", "[", "circular", "]"}
+	if len(toks) != len(want) {
+		t.Fatalf("got %v, want %v", texts(toks), want)
+	}
+	for i, w := range want {
+		if toks[i].text != w {
+			t.Errorf("token %d = %q, want %q", i, toks[i].text, w)
+		}
 	}
 }
 
 func TestColumnsAreUTF16Units(t *testing.T) {
-	// U+1F680 is a surrogate pair, so it counts as two UTF-16 code units.
-	f := Parse("feature_model: M\n    \U0001F680ab: static early\n")
+	f := Parse("M:\n    \U0001F680ab : node {static early}\n")
 
 	ft, ok := f.Lookup("\U0001F680ab")
 	if !ok {
@@ -303,15 +431,44 @@ func TestIndentOfCountsTabs(t *testing.T) {
 	if got := indentOf("\tfoo"); got != tabWidth {
 		t.Errorf("indentOf(tab) = %d, want %d", got, tabWidth)
 	}
-	if got := indentOf("    foo"); got != 4 {
-		t.Errorf("indentOf(4 spaces) = %d, want 4", got)
+	// The specification's example mixes four spaces with a tab on one line.
+	if got := indentOf("    \tfoo"); got != 8 {
+		t.Errorf("indentOf(4 spaces + tab) = %d, want 8", got)
+	}
+}
+
+func TestParseMixedIndentationFromTheSpec(t *testing.T) {
+	// `vel_max` is written with four spaces then a tab, which must land it
+	// beside `to_loading` rather than beneath it.
+	src := "M:\n    xor navigation : node {static early} ?\n" +
+		"    \tvel_max : number (1.5)\n        to_loading : node {dynamic late}\n"
+
+	f := Parse(src)
+
+	vel, ok := f.Lookup("vel_max")
+	if !ok {
+		t.Fatal("vel_max not found")
+	}
+	loading, ok := f.Lookup("to_loading")
+	if !ok {
+		t.Fatal("to_loading not found")
+	}
+
+	if vel.Parent == nil || vel.Parent.Name != "navigation" {
+		t.Errorf("vel_max.Parent = %v, want navigation", vel.Parent)
+	}
+	if loading.Parent == nil || loading.Parent.Name != "navigation" {
+		t.Errorf("to_loading.Parent = %v, want navigation", loading.Parent)
+	}
+	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
+		t.Errorf("unexpected errors: %v", errs)
 	}
 }
 
 func TestParseEmptyDocument(t *testing.T) {
 	f := Parse("")
 
-	if !hasMessage(f.Diagnostics, `empty document: expected a "feature_model:" or "feature_config:" header`) {
+	if !hasMessage(f.Diagnostics, `empty document: expected a root feature ("NAME:") or a "feature_config:" header`) {
 		t.Errorf("missing diagnostic; got %v", messages(f.Diagnostics))
 	}
 }

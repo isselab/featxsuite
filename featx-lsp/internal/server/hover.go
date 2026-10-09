@@ -121,11 +121,30 @@ func describe(file *ftx.File, feature *ftx.Feature, model *ftx.File) string {
 func facts(kind ftx.Kind, feature *ftx.Feature) []string {
 	var out []string
 
+	if feature.Type != ftx.TypeUnset {
+		out = append(out, fmt.Sprintf("type: `%s`", feature.Type))
+	}
+
 	if kind == ftx.KindConfig {
 		if feature.Selected {
 			out = append(out, "selected (`*`)")
 		} else {
 			out = append(out, "not selected")
+		}
+	}
+
+	if feature.HasDefault {
+		label := "default"
+		if kind == ftx.KindConfig {
+			label = "value"
+		}
+		out = append(out, fmt.Sprintf("%s: `%s`", label, feature.Default))
+	}
+
+	// A value feature without bindings of its own is bound with its node.
+	if feature.Type.IsValue() && !feature.HasBindings {
+		if n := feature.BindingNode(); n != nil {
+			out = append(out, fmt.Sprintf("bound with `%s` (`%s`)", n.Name, n.Binding()))
 		}
 	}
 
@@ -169,6 +188,20 @@ func facts(kind ftx.Kind, feature *ftx.Feature) []string {
 		} else {
 			out = append(out, fmt.Sprintf("children: %s", strings.Join(names, ", ")))
 		}
+	}
+
+	for _, c := range feature.Constraints {
+		operands := make([]string, len(c.Operands))
+		for i, ref := range c.Operands {
+			operands[i] = fmt.Sprintf("`%s`", ref.Name)
+		}
+
+		joiner := ", "
+		if c.Op != ftx.OpNone {
+			joiner = fmt.Sprintf(" `%s` ", c.Op)
+		}
+
+		out = append(out, fmt.Sprintf("%s: %s", c.Kind(), strings.Join(operands, joiner)))
 	}
 
 	return out
