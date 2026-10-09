@@ -8,20 +8,24 @@ This work presents a novel technique to load and unload robot features to and fr
 
 `featxbinder`: rclcpp module responsible for managing manual and plugin compositions of features
 
-`featx_interfaces`: custom rclpy infrastructure that makes provision for rclpy plugins via services 
+`rclpy_components`: supplies for rclpy what `rclcpp_components` supplies for rclcpp — a container that loads and unloads Python nodes on request
 
-### Python feature binding
-ROS 2 provides no rclpy counterpart to `rclcpp_components`: a component container binds C++ composable nodes through `class_loader`, which has no Python equivalent. FeatX closes that gap with `featx_interfaces`, whose `LoadFeature` and `UnloadFeature` services are served by the `plugin_registry` node. Binding a Python feature imports its module, instantiates the class and adds the node to the registry's executor so that its callbacks run; unbinding removes it from the executor and destroys the node.
+`featx-lsp`: a language server for the `.ftx` feature-modelling DSL, which also generates the JSON the toolchain reads and `generate_parameter_library` schemas
 
-`featxcli` also ships `component_container`, an alternative registry that serves the standard `composition_interfaces` contract (`LoadNode`, `UnloadNode`, `ListNodes`) instead of the FeatX services. Run it in place of `plugin_registry` and rclpy features become visible to the same tooling as rclcpp ones:
+### Feature binding in both languages
+ROS 2 provides no rclpy counterpart to `rclcpp_components`: a container binds C++ composable nodes through `class_loader`, which has no Python equivalent. FeatX closes that gap with `rclpy_components`, a container that serves the same `composition_interfaces` contract (`LoadNode`, `UnloadNode`, `ListNodes`) over the same service names, so the standard tooling drives it:
 
 ```
-ros2 run featxcli component_container
-ros2 component load /featx_py_container py_plugin_executor boot:Boot
+ros2 component load /featx_py_container py_plugin_executor featx_plugin::Boot
+ros2 component list
 ros2 component unload /featx_py_container 1
 ```
 
-Either way, prefer `ros2 featx load`/`unload` over the commands above: only the verbs validate the feature model before binding and record the resulting selection state. Note also that Python cannot truly unload code — unbinding stops a feature's callbacks and destroys its node, but the imported module remains resident.
+Components advertise themselves through the ament resource index — `rclcpp_components` for C++, `rclpy_components` for Python — so a feature's implementing package and language are discovered rather than declared. `ros2 featx load`/`unload` consult that index and load into the matching container, which means both languages take one code path.
+
+Prefer the verbs over the commands above: only they validate the feature model before binding and record the resulting selection state.
+
+One difference between the two languages is irreducible. A C++ component genuinely unloads, because its library can be closed. Python has no `dlclose`, so unbinding an rclpy feature stops its callbacks and destroys its node, but the imported module remains resident.
 
 ## Project Website
 https://jgyimah.github.io/featx/
