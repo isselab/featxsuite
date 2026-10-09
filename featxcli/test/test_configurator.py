@@ -92,9 +92,9 @@ class TestConfigurator:
         assert hasattr(configurator, "base_dir")
         assert hasattr(configurator, "model_dir")
         assert hasattr(configurator, "all_configs")
-        assert hasattr(configurator, "parent_feature")
+        assert hasattr(configurator, "issue_count")
         assert configurator.all_configs == ""
-        assert configurator.parent_feature == ""
+        assert configurator.issue_count == 0
 
     def test_readFeatures_success(self, temp_model_dir, sample_features_data):
         """Test successful reading of features.json"""
@@ -111,12 +111,12 @@ class TestConfigurator:
             configurator.base_dir = temp_dir
             configurator.model_dir = model_dir
             configurator.all_configs = ""
-            configurator.parent_feature = ""
+            configurator.issue_count = 0
 
             result = configurator.readFeatures()
             assert result == sample_features_data
 
-    def test_readFeatures_file_not_found(self, temp_model_dir, capsys):
+    def test_readFeatures_file_not_found(self, temp_model_dir, capfd):
         """Test readFeatures when features.json doesn't exist"""
         temp_dir, model_dir = temp_model_dir
 
@@ -125,15 +125,15 @@ class TestConfigurator:
             configurator.base_dir = temp_dir
             configurator.model_dir = model_dir
             configurator.all_configs = ""
-            configurator.parent_feature = ""
+            configurator.issue_count = 0
 
             result = configurator.readFeatures()
-            captured = capsys.readouterr()
+            captured = capfd.readouterr()
 
             assert result is None
-            assert "Error: Could not find features file" in captured.out
+            assert "Error: Could not find features file" in captured.err
 
-    def test_readFeatures_invalid_json(self, temp_model_dir, capsys):
+    def test_readFeatures_invalid_json(self, temp_model_dir, capfd):
         """Test readFeatures with invalid JSON"""
         temp_dir, model_dir = temp_model_dir
         features_path = os.path.join(model_dir, "features.json")
@@ -147,13 +147,13 @@ class TestConfigurator:
             configurator.base_dir = temp_dir
             configurator.model_dir = model_dir
             configurator.all_configs = ""
-            configurator.parent_feature = ""
+            configurator.issue_count = 0
 
             result = configurator.readFeatures()
-            captured = capsys.readouterr()
+            captured = capfd.readouterr()
 
             assert result is None
-            assert "Error: Failed to decode JSON" in captured.out
+            assert "Error: Failed to decode JSON" in captured.err
 
     def test_readConfigs_success(self, temp_model_dir, sample_configs_data):
         """Test successful reading of configs.json"""
@@ -169,12 +169,12 @@ class TestConfigurator:
             configurator.base_dir = temp_dir
             configurator.model_dir = model_dir
             configurator.all_configs = ""
-            configurator.parent_feature = ""
+            configurator.issue_count = 0
 
             result = configurator.readConfigs()
             assert result == sample_configs_data
 
-    def test_readConfigs_file_not_found(self, temp_model_dir, capsys):
+    def test_readConfigs_file_not_found(self, temp_model_dir, capfd):
         """Test readConfigs when configs.json doesn't exist"""
         temp_dir, model_dir = temp_model_dir
 
@@ -183,13 +183,13 @@ class TestConfigurator:
             configurator.base_dir = temp_dir
             configurator.model_dir = model_dir
             configurator.all_configs = ""
-            configurator.parent_feature = ""
+            configurator.issue_count = 0
 
             result = configurator.readConfigs()
-            captured = capsys.readouterr()
+            captured = capfd.readouterr()
 
             assert result is None
-            assert "Error: Could not find configs file" in captured.out
+            assert "Error: Could not find configs file" in captured.err
 
     def test_get_is_selected(self, sample_configs_data):
         """Test get_is_selected method"""
@@ -219,11 +219,10 @@ class TestConfigurator:
         assert configurator.get_binding_mode("NonExistent") is None
 
     def test_traverseModel_binding_inconsistency(
-            self, sample_configs_data, capsys):
+            self, sample_configs_data, capfd):
         """Test traverseModel detects binding inconsistencies"""
         configurator = Configurator()
         configurator.all_configs = sample_configs_data
-        configurator.parent_feature = ""
 
         # Create a feature model with inconsistent bindings
         fx_model = {
@@ -241,12 +240,12 @@ class TestConfigurator:
         }
 
         configurator.traverseModel(fx_model)
-        captured = capsys.readouterr()
+        captured = capfd.readouterr()
 
-        assert " *Feature (FeatureA): bindings not consistent" in captured.out
+        assert " *Feature (FeatureA): bindings not consistent" in captured.err
 
     def test_traverseModel_static_depends_on_dynamic(
-            self, sample_configs_data, capsys):
+            self, sample_configs_data, capfd):
         """Test traverseModel detects static child depending on dynamic parent"""
         # Modify configs to create the problematic scenario
         configs_with_issue = {
@@ -268,7 +267,6 @@ class TestConfigurator:
 
         configurator = Configurator()
         configurator.all_configs = configs_with_issue
-        configurator.parent_feature = ""
 
         fx_model = {
             "name": "ParentFeature",
@@ -283,14 +281,14 @@ class TestConfigurator:
         }
 
         configurator.traverseModel(fx_model)
-        captured = capsys.readouterr()
+        captured = capfd.readouterr()
 
         assert (
             " *Static and selected child ChildFeature depends on dynamic parent ParentFeature"
-            in captured.out
+            in captured.err
         )
 
-    def test_traverseModel_early_depends_on_late(self, capsys):
+    def test_traverseModel_early_depends_on_late(self, capfd):
         """Test traverseModel detects early child depending on late parent"""
         configs_with_issue = {
             "configs": [
@@ -311,7 +309,6 @@ class TestConfigurator:
 
         configurator = Configurator()
         configurator.all_configs = configs_with_issue
-        configurator.parent_feature = ""
 
         fx_model = {
             "name": "ParentFeature",
@@ -326,14 +323,14 @@ class TestConfigurator:
         }
 
         configurator.traverseModel(fx_model)
-        captured = capsys.readouterr()
+        captured = capfd.readouterr()
 
         assert (
             " *Early child feature ChildFeature cannot depends on late parent ParentFeature"
-            in captured.out
+            in captured.err
         )
 
-    def test_traverseModel_mutual_exclusion(self, capsys):
+    def test_traverseModel_mutual_exclusion(self, capfd):
         """Test traverseModel detects mutually exclusive features both selected"""
         configs_with_issue = {
             "configs": [
@@ -354,7 +351,6 @@ class TestConfigurator:
 
         configurator = Configurator()
         configurator.all_configs = configs_with_issue
-        configurator.parent_feature = ""
 
         fx_model = {
             "name": "root",
@@ -369,14 +365,14 @@ class TestConfigurator:
         }
 
         configurator.traverseModel(fx_model)
-        captured = capsys.readouterr()
+        captured = capfd.readouterr()
 
         assert (
             " *FeatureB and FeatureA exclude each other. They cannot be selected simultaneously"
-            in captured.out
+            in captured.err
         )
 
-    def test_traverseModel_selected_child_deselected_parent(self, capsys):
+    def test_traverseModel_selected_child_deselected_parent(self, capfd):
         """Test traverseModel detects selected child with deselected parent"""
         configs_with_issue = {
             "configs": [
@@ -397,7 +393,6 @@ class TestConfigurator:
 
         configurator = Configurator()
         configurator.all_configs = configs_with_issue
-        configurator.parent_feature = ""
 
         fx_model = {
             "name": "ParentFeature",
@@ -412,11 +407,11 @@ class TestConfigurator:
         }
 
         configurator.traverseModel(fx_model)
-        captured = capsys.readouterr()
+        captured = capfd.readouterr()
 
         assert (
             " *Parent ParentFeature is deselected but child ChildFeature is selected"
-            in captured.out
+            in captured.err
         )
 
     @patch.object(Configurator, "readFeatures")
@@ -458,7 +453,7 @@ class TestConfigurator:
             configurator.base_dir = temp_dir
             configurator.model_dir = model_dir
             configurator.all_configs = ""
-            configurator.parent_feature = ""
+            configurator.issue_count = 0
 
             # Should not raise any exceptions or print errors for valid model
             configurator.checkRules()
@@ -478,7 +473,6 @@ class TestConfigurator:
 
         configurator = Configurator()
         configurator.all_configs = configs
-        configurator.parent_feature = ""
 
         fx_model = {
             "name": "root",
