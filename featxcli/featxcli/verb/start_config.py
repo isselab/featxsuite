@@ -21,8 +21,9 @@ class StartConfigVerb(VerbExtension):
 
     def add_arguments(self, parser, cli_name):
         parser.add_argument(
-            '--workspace', type=str, default=os.getcwd(),
-            help='the workspace holding the feature packages (default: the current directory)')
+            '--workspace', type=str, default=None,
+            help='the workspace holding the feature packages '
+                 '(default: the nearest one enclosing the current directory)')
         parser.add_argument(
             '--no-build', action='store_true',
             help='generate the static binding header and launch without rebuilding')
@@ -36,13 +37,23 @@ class StartConfigVerb(VerbExtension):
         longer selected has to leave the binary. Returns False when the
         configuration cannot be delivered, in which case nothing is launched.
         """
+        if workspace is None:
+            workspace = static_binding.find_workspace()
+
+            if workspace is None:
+                logger.info(
+                    f"No workspace found above {os.getcwd()}: looked for a src/ "
+                    f"holding {static_binding.OWNER}. Pass --workspace.")
+                return False
+
+            logger.info(f"Workspace: {workspace}")
+
         header = static_binding.locate(workspace)
 
         if header is None:
             logger.info(
                 f"Could not find {static_binding.OWNER}'s "
-                f"{static_binding.HEADER} under {workspace}. "
-                f"Run this from the workspace root, or pass --workspace.")
+                f"{static_binding.HEADER} under {workspace}.")
             return False
 
         configs = configurator.readConfigs()

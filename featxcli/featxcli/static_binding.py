@@ -94,6 +94,31 @@ def locate(workspace):
     return None
 
 
+def find_workspace(start=None):
+    """Walk up from a directory to the workspace that encloses it.
+
+    A workspace is identified by having a src/ that holds featxbinder: that is
+    both where colcon expects to be run from and where the header can be
+    found. Having the directory containing featxbinder be enough would be
+    wrong, because running colcon there would build a second workspace inside
+    the first.
+
+    Walking up means the command works from anywhere inside a checkout rather
+    than only from the root.
+    """
+    current = os.path.abspath(start or os.getcwd())
+
+    while True:
+        if os.path.isdir(os.path.join(current, "src")) and locate(current) is not None:
+            return current
+
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+
+        current = parent
+
+
 def write(path, text):
     """Write the header, reporting whether it changed.
 

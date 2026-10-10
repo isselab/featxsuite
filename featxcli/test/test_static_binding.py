@@ -155,6 +155,57 @@ class TestLocate:
         assert sb.locate(str(tmp_path)) is None
 
 
+class TestFindWorkspace:
+
+    def workspace(self, root):
+        """Build a workspace: a src/ holding featxbinder, as colcon expects."""
+        header = root / "src" / "featx_suite" / "featxbinder" / "include" / "featxbinder"
+        header.mkdir(parents=True)
+        (header / "static_features.h").write_text("")
+        return root
+
+    def test_it_finds_the_workspace_it_is_already_in(self, tmp_path):
+        ws = self.workspace(tmp_path)
+        assert sb.find_workspace(str(ws)) == str(ws)
+
+    def test_it_walks_up_from_a_package_inside_the_workspace(self, tmp_path):
+        ws = self.workspace(tmp_path)
+        deep = ws / "src" / "featx_suite" / "featxcli" / "featxcli" / "verb"
+        deep.mkdir(parents=True)
+
+        assert sb.find_workspace(str(deep)) == str(ws)
+
+    def test_it_does_not_stop_at_the_directory_holding_featxbinder(self, tmp_path):
+        """featx_suite contains featxbinder but is not a workspace.
+
+        Stopping there would make colcon build a second workspace inside the
+        first, with its own build/ and install/.
+        """
+        ws = self.workspace(tmp_path)
+        suite = ws / "src" / "featx_suite"
+
+        assert sb.find_workspace(str(suite)) == str(ws)
+
+    def test_a_src_without_featxbinder_is_not_the_workspace(self, tmp_path):
+        # An unrelated workspace nested above the real one must be skipped.
+        outer = tmp_path / "unrelated"
+        (outer / "src" / "something_else").mkdir(parents=True)
+        inner = self.workspace(outer / "real")
+        deep = inner / "src" / "featx_suite" / "featxbinder"
+
+        assert sb.find_workspace(str(deep)) == str(inner)
+
+    def test_nowhere_to_find_it_gives_none(self, tmp_path):
+        lonely = tmp_path / "a" / "b"
+        lonely.mkdir(parents=True)
+
+        assert sb.find_workspace(str(lonely)) is None
+
+    def test_it_terminates_at_the_filesystem_root(self, tmp_path):
+        # The walk must stop rather than loop on "/" having itself as parent.
+        assert sb.find_workspace("/") is None
+
+
 class TestStillInstalled:
 
     def install(self, root, name):
