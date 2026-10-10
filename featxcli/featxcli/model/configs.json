@@ -1,5 +1,5 @@
 {
-    "configs":[
+    "configs": [
         {
             "name": "navigation",
             "isSelected": true,
@@ -7,8 +7,12 @@
             "bindingMode": "Static"
         },
         {
+            "name": "vel_max",
+            "isSelected": true
+        },
+        {
             "name": "to_loading",
-            "isSelected": false,
+            "isSelected": true,
             "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
@@ -32,7 +36,7 @@
         },
         {
             "name": "lift",
-            "isSelected": false,
+            "isSelected": true,
             "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
@@ -42,37 +46,37 @@
             "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
-           {
+        {
             "name": "footprint",
             "isSelected": true,
             "bindingTime": "Early",
             "bindingMode": "Static"
         },
-           {
+        {
             "name": "circular",
             "isSelected": false,
             "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
-           {
+        {
             "name": "square",
-            "isSelected": false,
+            "isSelected": true,
             "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
-           {
+        {
             "name": "shelf",
             "isSelected": true,
             "bindingTime": "Early",
             "bindingMode": "Static"
         },
-           {
+        {
             "name": "attach",
-            "isSelected": false,
+            "isSelected": true,
             "bindingTime": "Late",
             "bindingMode": "Dynamic"
         },
-           {
+        {
             "name": "init_checks",
             "isSelected": false,
             "bindingTime": "Late",
@@ -95,5 +99,6 @@
             "isSelected": false,
             "bindingTime": "Late",
             "bindingMode": "Static"
-        }]
+        }
+    ]
 }

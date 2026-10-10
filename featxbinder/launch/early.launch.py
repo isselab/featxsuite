@@ -30,10 +30,12 @@ def early_features():
             "are unknown"
         )
 
+    # A parameter has no binding of its own and so no bindingTime: it is
+    # bound with the node it belongs to, never launched as one.
     return [
         config["name"]
         for config in configs["configs"]
-        if config["bindingTime"] == "Early" and config["isSelected"]
+        if config.get("bindingTime") == "Early" and config["isSelected"]
     ]
 
 
