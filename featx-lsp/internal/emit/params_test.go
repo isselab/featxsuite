@@ -143,3 +143,110 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+// groupedModel writes a parameter at a choice point. The alternatives are the
+// nodes that run, so they are the ones that need it.
+const groupedModel = `RB-1-BASE:
+    xor navigation : node {static early} ?
+        vel_max : double (1.6) <0.0, 3.0>
+        to_loading : node {dynamic late}
+        to_delivery : node {dynamic late}
+    shelf : node {static early} ?
+        max_weight : double (50.0)
+        attach : node {dynamic late}
+`
+
+func TestParamsGroupingHandsItsParametersToEachAlternative(t *testing.T) {
+	got := render(t, groupedModel)
+
+	for _, node := range []string{"to_loading", "to_delivery"} {
+		spec, ok := got[node]
+		if !ok {
+			t.Fatalf("no spec for alternative %q", node)
+		}
+		if !strings.Contains(spec, node+":") {
+			t.Errorf("%s spec is not keyed on the alternative:\n%s", node, spec)
+		}
+		if !strings.Contains(spec, "vel_max:") {
+			t.Errorf("%s did not receive the grouping's parameter:\n%s", node, spec)
+		}
+	}
+}
+
+// A grouping does no work itself, so declaring the parameter there would put
+// it on a node the alternatives cannot read: ROS parameters belong to one node.
+func TestParamsGroupingKeepsNothingForItself(t *testing.T) {
+	if spec, ok := render(t, groupedModel)["navigation"]; ok {
+		t.Errorf("the grouping declared parameters of its own:\n%s", spec)
+	}
+}
+
+// Only a grouping hands parameters down. A plain node is a worker that owns
+// what it declares, and its children own theirs.
+func TestParamsPlainNodeKeepsItsOwnParameters(t *testing.T) {
+	got := render(t, groupedModel)
+
+	spec, ok := got["shelf"]
+	if !ok {
+		t.Fatal("a plain node did not keep its own parameter")
+	}
+	if !strings.Contains(spec, "max_weight:") {
+		t.Errorf("shelf lost its parameter:\n%s", spec)
+	}
+	if _, ok := got["attach"]; ok {
+		t.Error("a plain node's parameter was handed to its child")
+	}
+}
+
+// read_only describes the node that received the parameter, not where it was
+// written: an alternative bound dynamically stays reconfigurable even though
+// the grouping above it is static.
+func TestParamsReadOnlyFollowsTheReceivingNode(t *testing.T) {
+	got := render(t, groupedModel)
+
+	if strings.Contains(got["to_loading"], "read_only") {
+		t.Errorf("a dynamically bound alternative was marked read_only:\n%s", got["to_loading"])
+	}
+	if !strings.Contains(got["shelf"], "read_only: true") {
+		t.Errorf("a statically bound node was not marked read_only:\n%s", got["shelf"])
+	}
+}
+
+func TestParamsEnclosingNamesWhereToLookForAPackage(t *testing.T) {
+	specs, err := Params(ftx.Parse(groupedModel))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range specs {
+		switch s.Node {
+		case "to_loading", "to_delivery":
+			// An alternative is a component inside the grouping's package.
+			if len(s.Enclosing) == 0 || s.Enclosing[0] != "navigation" {
+				t.Errorf("%s: Enclosing = %v, want navigation first", s.Node, s.Enclosing)
+			}
+		case "shelf":
+			// A top-level node sits under nothing.
+			if len(s.Enclosing) != 0 {
+				t.Errorf("shelf: Enclosing = %v, want empty", s.Enclosing)
+			}
+		}
+	}
+}
+
+// A grouping with no alternatives has nowhere to hand its parameters, so it
+// keeps them rather than dropping them without a word.
+func TestParamsGroupingWithNoAlternativesKeepsItsParameters(t *testing.T) {
+	got := render(t, `RB-1-BASE:
+    xor orphan : node {static early} ?
+        stray : double (1.0)
+`)
+
+	spec, ok := got["orphan"]
+	if !ok {
+		t.Fatal("a grouping with no alternatives lost its parameters")
+	}
+	if !strings.Contains(spec, "stray:") {
+		t.Errorf("parameter went missing:\n%s", spec)
+	}
+}
