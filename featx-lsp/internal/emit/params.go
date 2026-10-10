@@ -15,6 +15,12 @@ type ParamFile struct {
 	YAML []byte
 }
 
+// FileName is what the specification is called wherever it is written. The
+// name is derived here so that printing it and writing it cannot disagree.
+func (p ParamFile) FileName() string {
+	return p.Node + "_params.yaml"
+}
+
 // Params renders the typed parameters of a feature model as
 // generate_parameter_library specifications, one per node that has any.
 //
