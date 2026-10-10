@@ -19,16 +19,30 @@ import (
 	"strings"
 )
 
-// Groups are the resource index groups components register under, one per
-// client library.
-var Groups = []string{"rclcpp_components", "rclpy_components"}
+// The resource index groups components register under, one per client
+// library. Which group a component is in says which language implements it,
+// and that is not only informative: a feature bound at compile time can only
+// be implemented in the language that has one.
+const (
+	GroupCPP    = "rclcpp_components"
+	GroupPython = "rclpy_components"
+)
+
+// Groups are the groups Read looks in.
+var Groups = []string{GroupCPP, GroupPython}
+
+// Registration is where one class came from.
+type Registration struct {
+	Package string
+	Group   string
+}
 
 // Index is what a set of install prefixes provides.
 type Index struct {
-	// Components maps a registered class name, without its namespace, to the
-	// package that registered it. The namespace is dropped because that is how
-	// a feature is resolved: by class name alone.
-	Components map[string]string
+	// Components maps a registered class name, without its namespace, to where
+	// it was registered. The namespace is dropped because that is how a
+	// feature is resolved: by class name alone.
+	Components map[string]Registration
 
 	// Executables holds the packages that install an executable named after
 	// themselves, which is the shape a manual composition takes.
@@ -63,14 +77,15 @@ func Prefixes() []string {
 // Read collects what the given prefixes provide.
 func Read(prefixes []string) Index {
 	index := Index{
-		Components:  map[string]string{},
+		Components:  map[string]Registration{},
 		Executables: map[string]bool{},
 		Prefixes:    prefixes,
 	}
 
 	for _, prefix := range prefixes {
 		for _, group := range Groups {
-			readGroup(index, filepath.Join(prefix, "share", "ament_index", "resource_index", group))
+			readGroup(index, group,
+				filepath.Join(prefix, "share", "ament_index", "resource_index", group))
 		}
 		readExecutables(index, prefix)
 	}
@@ -79,7 +94,7 @@ func Read(prefixes []string) Index {
 }
 
 // readGroup records every class registered by every package in one group.
-func readGroup(index Index, dir string) {
+func readGroup(index Index, group, dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -116,7 +131,10 @@ func readGroup(index Index, dir string) {
 			if class = strings.TrimSpace(class); class != "" {
 				// First prefix on the path wins, as it does for the loader.
 				if _, seen := index.Components[class]; !seen {
-					index.Components[class] = entry.Name()
+					index.Components[class] = Registration{
+						Package: entry.Name(),
+						Group:   group,
+					}
 				}
 			}
 		}

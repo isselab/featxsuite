@@ -469,7 +469,9 @@ an earlier design in which a single process hosted the Python features itself.
 
 Note that a Python feature cannot be bound `static early`. That binding is
 compiled in, and there is nothing to compile; see **Feature binding in both
-languages** below. Any other combination is open to either language.
+languages** below. Any other combination is open to either language, and
+`featx-lsp -lint -implementations` reports the model if a `static early`
+feature turns out to be implemented in rclpy.
 
 ### Giving a feature parameters
 
@@ -708,6 +710,10 @@ deselected feature would simply not be launched while remaining installed and
 startable by hand, which is the opposite of the guarantee `static early`
 exists to give. So compile-time binding is C++ only, and runtime binding is
 available to both.
+
+`featx-lsp -lint -implementations` enforces this, so the mistake is caught at
+the model rather than becoming a deployment that quietly carries a feature it
+was configured without.
 
 **A C++ component genuinely unloads, and a Python one does not quite.** Its
 library can be closed; Python has no `dlclose`, so unbinding an rclpy feature

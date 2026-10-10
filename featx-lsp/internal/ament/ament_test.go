@@ -64,14 +64,32 @@ func TestReadFindsComponentsInBothGroups(t *testing.T) {
 
 	index := Read([]string{root})
 
-	for class, wantPkg := range map[string]string{
-		"Lift": "elevator",
-		"Drop": "elevator",
-		"Boot": "py_plugins",
+	for class, want := range map[string]Registration{
+		"Lift": {Package: "elevator", Group: GroupCPP},
+		"Drop": {Package: "elevator", Group: GroupCPP},
+		"Boot": {Package: "py_plugins", Group: GroupPython},
 	} {
-		if got := index.Components[class]; got != wantPkg {
-			t.Errorf("Components[%q] = %q, want %q", class, got, wantPkg)
+		if got := index.Components[class]; got != want {
+			t.Errorf("Components[%q] = %+v, want %+v", class, got, want)
 		}
+	}
+}
+
+// Which group a class is in says which language implements it, and a feature
+// bound at compile time can only be implemented in the one that compiles.
+func TestReadRecordsWhichGroupAClassCameFrom(t *testing.T) {
+	root := prefix(t, map[string]string{
+		"rclcpp_components/cpp_pkg": "featx_plugin::Lift;lib/liblift.so\n",
+		"rclpy_components/py_pkg":   "featx_plugin::Detach;py_pkg.detach:Detach\n",
+	})
+
+	index := Read([]string{root})
+
+	if got := index.Components["Lift"].Group; got != GroupCPP {
+		t.Errorf("Lift group = %q, want %q", got, GroupCPP)
+	}
+	if got := index.Components["Detach"].Group; got != GroupPython {
+		t.Errorf("Detach group = %q, want %q", got, GroupPython)
 	}
 }
 
@@ -133,8 +151,8 @@ func TestReadAcrossPrefixesPrefersTheFirst(t *testing.T) {
 	first := prefix(t, map[string]string{"rclcpp_components/mine": "featx_plugin::Lift;lib/a.so\n"})
 	second := prefix(t, map[string]string{"rclcpp_components/theirs": "featx_plugin::Lift;lib/b.so\n"})
 
-	if got := Read([]string{first, second}).Components["Lift"]; got != "mine" {
-		t.Errorf("Components[Lift] = %q, want mine (the first prefix)", got)
+	if got := Read([]string{first, second}).Components["Lift"].Package; got != "mine" {
+		t.Errorf("Components[Lift].Package = %q, want mine (the first prefix)", got)
 	}
 }
 

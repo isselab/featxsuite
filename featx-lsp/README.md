@@ -72,6 +72,18 @@ a feature and its implementation, and the easiest thing to get wrong. A typed
 feature is a parameter of the node that encloses it and is not checked, having
 nothing to implement.
 
+It also rejects a `static early` feature implemented in rclpy. That binding
+leaves a deselected feature out of the binary, which is the preprocessor's
+doing, and there is no compile step in Python to leave anything out of. The
+check looks at which group registered the class, and reports the feature before
+looking for an executable — because an `ament_python` console script named
+after its package installs exactly where a manual composition is looked for, so
+an executable existing proves nothing here:
+
+```
+features.ftx:2:5: error: feature "gripper" is bound static and early, but "gripper" implements it as an rclpy component; compile-time binding needs a compile step, so a deselected feature would stay installed. Bind it static late, or implement it in rclcpp
+```
+
 This is **not** one of the model's own diagnostics and the editor never reports
 it. The other checks are decided by the `.ftx` files and hold wherever they are
 read; this one depends on what happens to be built and sourced, so it would
