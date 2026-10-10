@@ -461,6 +461,16 @@ data_files=[
 That path is what makes it discoverable; `rclpy_components` is the group
 `featx load` reads for Python features, beside `rclcpp_components` for C++.
 
+**Any package may provide Python features.** `py_plugin_executor` is not
+special — nothing in the tooling names it, and the group is read across every
+package that registers in it, so a feature belongs in the package that suits
+the model rather than being collected in one place. Its name is a leftover from
+an earlier design in which a single process hosted the Python features itself.
+
+Note that a Python feature cannot be bound `static early`. That binding is
+compiled in, and there is nothing to compile; see **Feature binding in both
+languages** below. Any other combination is open to either language.
+
 ### Giving a feature parameters
 
 A typed feature in the model is a ROS parameter of the node that receives it.
@@ -680,7 +690,30 @@ Components advertise themselves through the ament resource index — `rclcpp_com
 
 Prefer the verbs over the commands above: only they validate the feature model before binding and record the resulting selection state.
 
-One difference between the two languages is irreducible. A C++ component genuinely unloads, because its library can be closed. Python has no `dlclose`, so unbinding an rclpy feature stops its callbacks and destroys its node, but the imported module remains resident.
+The two languages are equal for everything bound at runtime: the same verbs,
+the same containers, the same contract. They are not equal everywhere, and two
+differences are irreducible rather than unfinished.
+
+**A Python feature cannot be bound `static early`.** That binding is
+implemented by the preprocessor: `static_features.h` defines a macro per
+selected feature, and the manual composition is compiled behind `#ifdef`, which
+is what makes a deselected feature absent from the binary. Python has no
+compile step, so there is nothing to leave out. `boot` and `init_checks` are
+`static late` for this reason, not by preference.
+
+You can get *early* in Python — `early.launch.py` launches
+`Node(package=feature, executable=feature)`, which works for an `ament_python`
+package with a console script of that name — but not the *static* part. A
+deselected feature would simply not be launched while remaining installed and
+startable by hand, which is the opposite of the guarantee `static early`
+exists to give. So compile-time binding is C++ only, and runtime binding is
+available to both.
+
+**A C++ component genuinely unloads, and a Python one does not quite.** Its
+library can be closed; Python has no `dlclose`, so unbinding an rclpy feature
+stops its callbacks and destroys its node, but the imported module stays
+resident. The feature is unbound in every way that is observable over ROS, and
+the memory is not reclaimed.
 
 ## Project Website
 https://jgyimah.github.io/featx/
