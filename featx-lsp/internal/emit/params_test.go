@@ -125,8 +125,21 @@ func TestParamsDescriptionIsBlank(t *testing.T) {
 func TestParamsNodeNameIsTheTopLevelKey(t *testing.T) {
 	got := render(t, paramModel)
 
-	if !strings.HasPrefix(got["nav"], "nav:\n") {
-		t.Errorf("spec should open with the node name:\n%s", got["nav"])
+	// The marker comes first; the node name is the first key.
+	if !strings.HasPrefix(got["nav"], Preamble+"nav:\n") {
+		t.Errorf("spec should open with the marker then the node name:\n%s", got["nav"])
+	}
+}
+
+func TestParamsMarksWhatItGenerated(t *testing.T) {
+	got := render(t, paramModel)
+
+	if !IsGenerated([]byte(got["nav"])) {
+		t.Errorf("spec is not recognisable as generated:\n%s", got["nav"])
+	}
+	// A schema a package wrote itself must not be mistaken for ours.
+	if IsGenerated([]byte("nav:\n  vel_max:\n    type: double\n")) {
+		t.Error("a hand-written schema was taken for generated")
 	}
 }
 
