@@ -12,6 +12,12 @@ This work presents a novel technique to load and unload robot features to and fr
 
 `featx-lsp`: a language server for the `.ftx` feature-modelling DSL, which also generates the JSON the toolchain reads and `generate_parameter_library` schemas
 
+To **bind** a feature is to commit its selection into the running system:
+resolve which package implements it, make it present and running, and record
+that it is now bound. When and how irrevocably that happens is what a feature's
+binding clause decides. [How binding works](#how-binding-works) covers this in
+full; the guide below gets you to the point of doing it.
+
 ## Prerequisites
 
 | | |
@@ -546,7 +552,63 @@ involved.
 
 ## How binding works
 
-### Binding time and mode decide how a feature is bound
+### What it means to bind a feature
+
+Binding is the act of **committing a feature's selection into the running
+system** — turning "this feature is selected" into "this feature is present and
+doing something". The feature model says what could be; binding is what makes
+it so.
+
+Binding one feature does three things:
+
+1. **Resolution** — find the implementation. The feature's name is looked up in
+   the ament index, which says which package provides it and in which language.
+   Nothing declares that mapping; it is derived from the name.
+2. **Activation** — make it present and running. Either compiled into an
+   executable that is launched, or loaded into a container and added to its
+   executor so its callbacks actually run.
+3. **Recording** — update the configuration, so the model stays the truth about
+   what is bound.
+
+That third step is why `ros2 featx load` is worth preferring over
+`ros2 component load`: the latter activates a component without recording
+anything, leaving the model disagreeing with the system it describes.
+
+The binding clause then answers two questions, and they are independent:
+
+| axis | question | values |
+|---|---|---|
+| **time** | *when* does the commitment happen? | `early` — at build and launch · `late` — while the system runs |
+| **mode** | *can it be revoked* afterwards? | `static` — fixed once bound · `dynamic` — can be rebound |
+
+So `static` does not mean "starts early", and `early` does not mean
+"permanent". Keeping them apart is the point: it is what lets one system carry
+features committed at four different strengths, from compiled in and
+unchangeable to loaded and unloaded at will. The next section says what each
+combination does.
+
+Two things follow that are easy to miss.
+
+**The system knows which phase it is in.** `featx_binder` carries a
+`bindingTime` parameter, which becomes `Late` once the configuration is up, and
+`load` and `unload` check it before doing anything. Early and late are
+therefore not only labels on a model — there is a runtime notion of which
+binding phase the system is in, and a late binding is refused outside it.
+
+**A parameter is never bound on its own.** A typed feature has no binding
+clause because it is bound with the node that encloses it: it appears when that
+node appears, and the node's *mode* decides whether it can be changed
+afterwards. That is why `read_only` in a generated parameter schema is derived
+from the binding mode of the node that receives the parameter, rather than
+written by hand.
+
+Put plainly: ROS 2 gives you compile-time composition or runtime composition,
+and which one you get is decided by how the code was written. FeatX makes
+binding time and mode properties of the *feature model* instead, and the
+toolchain enforces what each combination admits — including refusing to unload
+a feature declared static, and refusing to load one that was compiled in.
+
+### What each combination does
 A feature's binding clause is not a label; it selects the mechanism that binds
 it, and what can be done to it afterwards.
 
