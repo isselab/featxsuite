@@ -241,6 +241,31 @@ step, and **how** you implement it is decided by the bindings you gave it: the
 binding clause chooses the mechanism, and the wrong mechanism means the feature
 cannot be bound at all.
 
+### Only a `node` is implemented in code
+
+A feature's type says what kind of thing it is, and only one kind has an
+implementation:
+
+```
+xor navigation : node {static early} ?       a node: you write code for this
+    vel_max : double (1.6) <0.0, 3.0>        a parameter: you do not
+    to_loading : node {dynamic late}         a node: you write code for this
+```
+
+A feature typed `node` is a ROS node. It has bindings, it is something you
+write, and it is what `featx load` binds.
+
+Every other type — `bool`, `int`, `double`, `string` and the four array types —
+declares a **ROS parameter** of the node that encloses it. There is no class to
+write and nothing to register. A parameter has no bindings of its own either,
+because it is bound with its node: it comes up when the node comes up, and the
+node's binding mode decides whether it can be changed afterwards. What you do
+with a parameter is read it, which **Giving a feature parameters** below
+covers.
+
+So when reading the rest of this section, "feature" means a feature typed
+`node`. Nothing here applies to a parameter.
+
 ### Where implementations live
 
 Under `src/packages/`, one ROS package per feature bound **static early**, named
@@ -465,7 +490,8 @@ because the model said `<0.0, 4.0>`.
 
 ### Checklist for a new feature
 
-1. Declare it in `features.ftx` with a type and, for a node, its bindings.
+1. Declare it in `features.ftx` with a type and, for a node, its bindings. A
+   parameter stops here and at step 3: steps 4 to 6 are for nodes only.
 2. Add an entry to `configs.ftx`, with `*` if it should start out selected.
 3. `featx-lsp -lint`, then `-emit -w` both model files.
 4. Implement it by the mechanism its bindings call for: a manual composition
@@ -474,7 +500,16 @@ because the model said `<0.0, 4.0>`.
 6. Register it — `rclcpp_components_register_nodes` in CMake, or a line in the
    `components/` file for Python.
 7. `colcon build && source install/setup.bash`.
-8. `ros2 featx start_config` for a `static early` feature, otherwise
+8. Confirm nothing is missing:
+
+   ```bash
+   featx-lsp -lint -implementations featxcli/featxcli/model
+   ```
+
+   This checks each node against the built workspace and names any that has no
+   implementation, and the class name it looked for. It is how a misnamed class
+   is caught before `featx load` fails on it.
+9. `ros2 featx start_config` for a `static early` feature, otherwise
    `ros2 featx load -f <feature>` on the running system.
 
 ## When something goes wrong
@@ -496,6 +531,13 @@ pass `--workspace ~/ros2_ws`.
 **A feature you deselected is still there.** `colcon` installs but never
 uninstalls, so its old binary survives in `install/`. `start_config` names any
 such feature; remove `install/<feature>` and `build/<feature>` to be rid of it.
+
+**`featx load` says one particular feature has no implementation.** Usually
+the class is not named after the feature: a feature's name in `PascalCase` is
+the class that must exist, so `to_loading` needs `ToLoading`. Run `featx-lsp
+-lint -implementations` on the model to be told which features are missing and
+what each one was looked up as. The other possibility is that the component was
+never registered, so the code built and installed but announced nothing.
 
 **`Fix issue(s), build and rerun the command again`.** The configuration
 contradicts itself — a selected child under a deselected parent, or a binding

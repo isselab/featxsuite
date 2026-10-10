@@ -53,6 +53,40 @@ Every mode runs the same checks through `internal/lint`, so the editor, the
 terminal and the two generators can never disagree about whether a document is
 valid.
 
+**As an implementation check**, with `-lint -implementations`, which asks
+whether each node in the model actually has something implementing it in the
+workspace you have built:
+
+```
+$ featx-lsp -lint -implementations featxcli/featxcli/model
+features.ftx:5:9: error: no component is registered as "Lifter" for feature "lifter"; register it with rclcpp_components_register_nodes, or for rclpy a line in the package's components file
+features.ftx:6:5: error: feature "gripper" is bound static and early, so package "gripper" must install an executable "gripper" composing it; nothing does
+```
+
+What must exist depends on the bindings, so the check does too. A feature bound
+`static early` is compiled into a manual composition and launched, so it needs
+an executable named after it; registering a component of the same name does not
+make it bindable. Everything else is loaded, so it needs a registered component
+whose class name is the feature's name in `PascalCase` — the only link between
+a feature and its implementation, and the easiest thing to get wrong. A typed
+feature is a parameter of the node that encloses it and is not checked, having
+nothing to implement.
+
+This is **not** one of the model's own diagnostics and the editor never reports
+it. The other checks are decided by the `.ftx` files and hold wherever they are
+read; this one depends on what happens to be built and sourced, so it would
+show a sound model as broken until the workspace was built, and broken again
+whenever you worked on a different one. For the same reason it refuses to guess
+when `AMENT_PREFIX_PATH` is empty, rather than reporting every feature as
+unimplemented:
+
+```
+$ featx-lsp -lint -implementations featxcli/featxcli/model
+featx-lsp -lint -implementations: nothing is installed on AMENT_PREFIX_PATH, so
+there is nothing to check against. Build the workspace and source its
+install/setup.bash.
+```
+
 **As a parameter-schema generator**, with `-params`, which renders a model's
 typed parameters as [generate_parameter_library](https://github.com/PickNikRobotics/generate_parameter_library)
 specifications — one file per node that declares any:
@@ -456,6 +490,7 @@ command = "featx-lsp"
 | `internal/ftx` | the DSL — tokeniser, parser, analyser, formatter |
 | `internal/lint` | the full check pipeline, including cross-file model lookup |
 | `internal/emit` | rendering documents as featx JSON and as parameter schemas |
+| `internal/ament` | reading what a built workspace provides, for `-implementations` |
 | `internal/jsonrpc` | `Content-Length` framing and JSON-RPC 2.0 messages |
 | `internal/lsp` | the subset of LSP types the server uses |
 | `internal/server` | request dispatch and the language features |
