@@ -7,17 +7,15 @@
   <maintainer email="jude.gyimah87@gmail.com">fr0b0</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
   <depend>rclpy_components</depend>
   <exec_depend>ros2component</exec_depend>
   <exec_depend>ros2cli</exec_depend>
-  <exec_depend>setuptools</exec_depend>
+  <exec_depend>python3-setuptools</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
-  <test_depend>pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
