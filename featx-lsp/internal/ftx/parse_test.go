@@ -339,7 +339,7 @@ func TestParseErrors(t *testing.T) {
 		{
 			name: "junk after the type",
 			src:  "M:\n    nav : node static early\n",
-			want: `unexpected "static" after the type of "nav"; bindings go in "{}", a value in "()", a validator in "<>" and "?" marks it optional`,
+			want: `unexpected "static" after the type of "nav"; bindings go in "{}", a value in "()", a validator is written as "bounds<0.0, 3.0>", and "?" marks it optional`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -508,80 +508,164 @@ func hasMessage(ds []Diagnostic, want string) bool {
 	return false
 }
 
-func TestValidatorExclusiveBoundKinds(t *testing.T) {
+func TestValidatorNamedForms(t *testing.T) {
 	cases := []struct {
 		src  string
 		kind ValidatorKind
 		args []string
 	}{
-		{"<0.0, #>", ValidatorGtEq, []string{"0.0"}},
-		{"<!0.0, #>", ValidatorGt, []string{"0.0"}},
-		{"<#, 3.0>", ValidatorLtEq, []string{"3.0"}},
-		{"<#, !3.0>", ValidatorLt, []string{"3.0"}},
-		{"<0.0, 3.0>", ValidatorBounds, []string{"0.0", "3.0"}},
-		{"<!0.0, !3.0>", ValidatorBounds, []string{"0.0", "3.0"}},
+		{"bounds<0.0, 3.0>", ValidatorBounds, []string{"0.0", "3.0"}},
+		{"gt<0.0>", ValidatorGt, []string{"0.0"}},
+		{"gt_eq<0.0>", ValidatorGtEq, []string{"0.0"}},
+		{"lt<3.0>", ValidatorLt, []string{"3.0"}},
+		{"lt_eq<3.0>", ValidatorLtEq, []string{"3.0"}},
+		{"one_of<1.0, 2.0>", ValidatorOneOf, []string{"1.0", "2.0"}},
 	}
 
 	for _, c := range cases {
 		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) " + c.src + "\n")
-		p := f.TopLevel()[0].Children[0]
+		vs := f.TopLevel()[0].Children[0].Validators
 
-		if p.Validator.Kind != c.kind {
-			t.Errorf("%s: kind = %v, want %v", c.src, p.Validator.Kind, c.kind)
+		if len(vs) != 1 {
+			t.Fatalf("%s: %d validator(s), want 1", c.src, len(vs))
 		}
-		// The `!` is a marker, not part of the value.
-		if len(p.Validator.Args) != len(c.args) {
-			t.Fatalf("%s: args = %v, want %v", c.src, p.Validator.Args, c.args)
+		if vs[0].Kind != c.kind {
+			t.Errorf("%s: kind = %v, want %v", c.src, vs[0].Kind, c.kind)
+		}
+		if len(vs[0].Args) != len(c.args) {
+			t.Fatalf("%s: args = %v, want %v", c.src, vs[0].Args, c.args)
 		}
 		for i, want := range c.args {
-			if p.Validator.Args[i] != want {
-				t.Errorf("%s: args[%d] = %q, want %q", c.src, i, p.Validator.Args[i], want)
+			if vs[0].Args[i] != want {
+				t.Errorf("%s: args[%d] = %q, want %q", c.src, i, vs[0].Args[i], want)
 			}
 		}
 	}
 }
 
-func TestValidatorExclusivityIsRecordedForBothEnds(t *testing.T) {
-	for _, c := range []struct {
-		src          string
-		lower, upper bool
-	}{
-		{"<0.0, 3.0>", false, false},
-		{"<!0.0, 3.0>", true, false},
-		{"<0.0, !3.0>", false, true},
-		{"<!0.0, !3.0>", true, true},
-	} {
-		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) " + c.src + "\n")
-		v := f.TopLevel()[0].Children[0].Validator
+// A validator taking no arguments has a form, which the bracket-only syntax
+// could not express at all.
+func TestValidatorWithNoArguments(t *testing.T) {
+	f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : string (a) not_empty<>\n")
+	vs := f.TopLevel()[0].Children[0].Validators
 
-		if v.LowerExclusive != c.lower || v.UpperExclusive != c.upper {
-			t.Errorf("%s: lower=%v upper=%v, want lower=%v upper=%v",
-				c.src, v.LowerExclusive, v.UpperExclusive, c.lower, c.upper)
+	if len(vs) != 1 || vs[0].Kind != ValidatorNotEmpty {
+		t.Fatalf("validators = %v, want one not_empty", vs)
+	}
+	if len(vs[0].Args) != 0 {
+		t.Errorf("args = %v, want none", vs[0].Args)
+	}
+}
+
+// Several validators may be written one after another, which the library
+// applies in turn.
+func TestValidatorSeveralOnOneParameter(t *testing.T) {
+	f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n" +
+		"        p : string (autonomous) not_empty<> size_gt<2> size_lt<20>\n")
+	vs := f.TopLevel()[0].Children[0].Validators
+
+	want := []ValidatorKind{ValidatorNotEmpty, ValidatorSizeGt, ValidatorSizeLt}
+	if len(vs) != len(want) {
+		t.Fatalf("%d validator(s), want %d: %v", len(vs), len(want), vs)
+	}
+	for i, k := range want {
+		if vs[i].Kind != k {
+			t.Errorf("validators[%d] = %v, want %v", i, vs[i].Kind, k)
 		}
 	}
 }
 
-func TestValidatorExclusiveMisuseIsReported(t *testing.T) {
+// The bracket-only forms inferred which validator was meant from the shape of
+// the arguments. They are gone, and say what to write instead.
+func TestValidatorRetiredFormsAreReported(t *testing.T) {
 	cases := map[string]string{
-		"<!#, 3.0>":       `"!" excludes a bound, but that end is "#", so there is no bound to exclude`,
-		"<0.0, !#>":       `"!" excludes a bound, but that end is "#", so there is no bound to exclude`,
-		"<!4>":            `"!" excludes a bound, and a size is not one`,
-		"<<!slow, fast>>": `"!" excludes a bound, and an enumeration has none; remove the value instead`,
-		"<0.0!, 3.0>":     `"!" excludes a bound and belongs before it, as "<!0.0, 3.0>"`,
-		"<!!0.0, 3.0>":    `repeated "!"`,
+		"double (1.0) <0.0, 3.0>": `a validator is written by name before its arguments, as "bounds<0.0, 3.0>", "gt<0.0>" or "not_empty<>"`,
+		"double (1.0) <0.0, #>":   `a validator is written by name before its arguments, as "bounds<0.0, 3.0>", "gt<0.0>" or "not_empty<>"`,
+		"double (1.0) <!0.0, #>":  `a validator is written by name before its arguments, as "bounds<0.0, 3.0>", "gt<0.0>" or "not_empty<>"`,
+		"string (a) <<a, b>>":     `"<<a, b>>" is no longer how an enumeration is written; use "one_of<a, b>"`,
+	}
+
+	for entry, want := range cases {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : " + entry + "\n")
+
+		if !hasMessage(f.Diagnostics, want) {
+			t.Errorf("%s: missing %q; got %v", entry, want, messages(f.Diagnostics))
+		}
+	}
+}
+
+func TestValidatorUnknownNameSuggests(t *testing.T) {
+	f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) size_greater<2>\n")
+
+	want := `there is no validator called "size_greater"; did you mean "size_gt"?`
+	if !hasMessage(f.Diagnostics, want) {
+		t.Errorf("missing %q; got %v", want, messages(f.Diagnostics))
+	}
+}
+
+func TestValidatorArityIsChecked(t *testing.T) {
+	cases := map[string]string{
+		"bounds<0.0>":  "bounds<> takes 2 arguments, and 1 was given",
+		"not_empty<3>": "not_empty<> takes no arguments",
+		"gt<0.0, 1.0>": "gt<> takes one argument, and 2 were given",
 	}
 
 	for src, want := range cases {
 		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) " + src + "\n")
 
-		var found bool
-		for _, d := range f.Diagnostics {
-			if d.Message == want {
-				found = true
-			}
+		if !hasMessage(f.Diagnostics, want) {
+			t.Errorf("%s: missing %q; got %v", src, want, messages(f.Diagnostics))
 		}
-		if !found {
-			t.Errorf("%s: no diagnostic %q; got %v", src, want, messages(f.Diagnostics))
+	}
+}
+
+func TestValidatorRepeatedKindIsReported(t *testing.T) {
+	f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) gt<0.0> gt<1.0>\n")
+
+	want := `feature "p" already declares gt<>`
+	if !hasMessage(f.Diagnostics, want) {
+		t.Errorf("missing %q; got %v", want, messages(f.Diagnostics))
+	}
+}
+
+// A validator may sit on its own line beneath the parameter it constrains, as
+// a constraint sits beneath its feature.
+func TestValidatorOnItsOwnLine(t *testing.T) {
+	f := Parse(`RB-1-BASE:
+    demo : node {dynamic late}
+        p : string ("autonomous")
+            one_of<"autonomous", "manual">
+        q : double (1.5)
+            gt<0.0> lt<3.0>
+`)
+
+	for _, d := range f.Diagnostics {
+		if d.Severity == SeverityError {
+			t.Fatalf("unexpected error: %s", d.Message)
+		}
+	}
+
+	children := f.TopLevel()[0].Children
+	if n := len(children[0].Validators); n != 1 {
+		t.Errorf("p has %d validator(s), want 1", n)
+	}
+	if n := len(children[1].Validators); n != 2 {
+		t.Errorf("q has %d validator(s), want 2", n)
+	}
+}
+
+func TestValidatorLineNeedsAParameterAbove(t *testing.T) {
+	cases := map[string]string{
+		// Not indented past the parameter it would belong to.
+		"RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0)\n        gt<0.0>\n": `a validator on its own line belongs to the parameter above it: indent it past "p"`,
+		// A node does not carry validators.
+		"RB-1-BASE:\n    demo : node {dynamic late}\n        inner : node {dynamic late}\n            gt<0.0>\n": "a node cannot carry a validator; only a parameter constrains its own value",
+	}
+
+	for src, want := range cases {
+		f := Parse(src)
+		if !hasMessage(f.Diagnostics, want) {
+			t.Errorf("missing %q; got %v", want, messages(f.Diagnostics))
 		}
 	}
 }

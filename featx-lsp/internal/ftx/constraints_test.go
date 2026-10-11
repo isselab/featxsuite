@@ -650,11 +650,11 @@ func TestCrossCheckXorAllowsOnlyOne(t *testing.T) {
 
 func TestParseAllValidatorForms(t *testing.T) {
 	src := "M:\n    n : node {dynamic late}\n" +
-		"        a : double (1.5) <0.0, 3.0>\n" +
-		"        b : double (1.0) <0.0, #>\n" +
-		"        c : double (-0.01) <#, 0.0>\n" +
-		"        d : double (7.0) <<0.0, 3.0, 7.0>>\n" +
-		"        e : double_array (0.0, 0.0, 0.0, 0.0) <4>\n"
+		"        a : double (1.5) bounds<0.0, 3.0>\n" +
+		"        b : double (1.0) gt_eq<0.0>\n" +
+		"        c : double (-0.01) lt_eq<0.0>\n" +
+		"        d : double (7.0) one_of<0.0, 3.0, 7.0>\n" +
+		"        e : double_array (0.0, 0.0, 0.0, 0.0) fixed_size<4>\n"
 
 	f := Parse(src)
 	if errs := errorsOf(f.Diagnostics); len(errs) != 0 {
@@ -682,11 +682,11 @@ func TestParseAllValidatorForms(t *testing.T) {
 			t.Errorf("%s not found", tc.name)
 			continue
 		}
-		if ft.Validator.Kind != tc.kind {
-			t.Errorf("%s kind = %v, want %v", tc.name, ft.Validator.Kind, tc.kind)
+		if ft.Validators[0].Kind != tc.kind {
+			t.Errorf("%s kind = %v, want %v", tc.name, ft.Validators[0].Kind, tc.kind)
 		}
-		if got := strings.Join(ft.Validator.Args, ","); got != strings.Join(tc.args, ",") {
-			t.Errorf("%s args = %v, want %v", tc.name, ft.Validator.Args, tc.args)
+		if got := strings.Join(ft.Validators[0].Args, ","); got != strings.Join(tc.args, ",") {
+			t.Errorf("%s args = %v, want %v", tc.name, ft.Validators[0].Args, tc.args)
 		}
 	}
 }
@@ -752,53 +752,63 @@ func TestAnalyzeTypeAndValidatorErrors(t *testing.T) {
 		},
 		{
 			name: "fixed_size on a scalar",
-			src:  head + "a : double (1.0) <4>\n",
-			want: `"<n>" fixes an array's length, and "a" is a double`,
+			src:  head + "a : double (1.0) fixed_size<4>\n",
+			want: `fixed_size<> needs a string or an array, and "a" is a double`,
 		},
 		{
 			name: "fixed_size disagrees with the value",
-			src:  head + "a : double_array (1.0, 2.0) <3>\n",
-			want: `the value has 2 element(s) but "fixed_size<>" requires 3`,
+			src:  head + "a : double_array (1.0, 2.0) fixed_size<3>\n",
+			want: `the value has 2 element(s) but fixed_size<> requires 3`,
 		},
 		{
 			name: "range on a string",
-			src:  head + "a : string (x) <0.0, 1.0>\n",
-			want: `a range needs a numeric type, and "a" is a string`,
+			src:  head + "a : string (x) bounds<0.0, 1.0>\n",
+			want: `bounds<> needs a numeric type, and "a" is a string`,
 		},
 		{
 			name: "empty range",
-			src:  head + "a : double (1.0) <3.0, 0.0>\n",
+			src:  head + "a : double (1.0) bounds<3.0, 0.0>\n",
 			want: "the range is empty: 3.0 is greater than 0.0",
 		},
 		{
 			name: "default below the minimum",
-			src:  head + "a : double (-1.0) <0.0, 3.0>\n",
+			src:  head + "a : double (-1.0) bounds<0.0, 3.0>\n",
 			want: "the value -1.0 is below the permitted minimum 0.0",
 		},
 		{
 			name: "default above the maximum",
-			src:  head + "a : double (9.0) <0.0, 3.0>\n",
+			src:  head + "a : double (9.0) bounds<0.0, 3.0>\n",
 			want: "the value 9.0 is above the permitted maximum 3.0",
 		},
 		{
 			name: "default outside the enumeration",
-			src:  head + "a : double (5.0) <<0.0, 3.0>>\n",
+			src:  head + "a : double (5.0) one_of<0.0, 3.0>\n",
 			want: "the value 5.0 is not one of 0.0, 3.0",
 		},
 		{
 			name: "validator on a node",
-			src:  "M:\n    n : node {static early} <0, 1>\n",
+			src:  "M:\n    n : node {static early} bounds<0, 1>\n",
 			want: "a node cannot carry a validator; only a parameter constrains its own value",
 		},
 		{
-			name: "both ends open",
-			src:  head + "a : double (1.0) <#, #>\n",
-			want: `both ends are "#", so this constrains nothing`,
+			name: "a retired bracket form",
+			src:  head + "a : double (1.0) <0.0, 3.0>\n",
+			want: `a validator is written by name before its arguments, as "bounds<0.0, 3.0>", "gt<0.0>" or "not_empty<>"`,
 		},
 		{
-			name: "too many range arguments",
-			src:  head + "a : double (1.0) <0.0, 1.0, 2.0>\n",
-			want: `a range takes two arguments; use "<<a, b, c>>" for an enumeration`,
+			name: "too many arguments for bounds",
+			src:  head + "a : double (1.0) bounds<0.0, 1.0, 2.0>\n",
+			want: "bounds<> takes 2 arguments, and 3 were given",
+		},
+		{
+			name: "a size validator on a scalar",
+			src:  head + "a : double (1.0) size_gt<2>\n",
+			want: `size_gt<> needs a string or an array, and "a" is a double`,
+		},
+		{
+			name: "a default shorter than size_gt allows",
+			src:  head + "a : string (ab) size_gt<5>\n",
+			want: "the value's length is 2, and size_gt<> requires more than 5",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -814,9 +824,9 @@ func TestAnalyzeTypeAndValidatorErrors(t *testing.T) {
 
 func TestFormatPreservesValidators(t *testing.T) {
 	src := "M:\n    n : node {static early}\n" +
-		"        a : double (1.5) <0.0,3.0>\n" +
-		"        b : double_array (1.0,2.0) <2>\n" +
-		"        c : string (x) <<x, y>>\n"
+		"        a : double (1.5) bounds<0.0, 3.0>\n" +
+		"        b : double_array (1.0,2.0) fixed_size<2>\n" +
+		"        c : string (x) one_of<x, y>\n"
 
 	got, ok := Format(Parse(src))
 	if !ok {
@@ -824,9 +834,9 @@ func TestFormatPreservesValidators(t *testing.T) {
 	}
 
 	want := "M:\n    n : node {static early}\n" +
-		"        a : double (1.5) <0.0, 3.0>\n" +
-		"        b : double_array (1.0, 2.0) <2>\n" +
-		"        c : string (x) <<x, y>>\n"
+		"        a : double (1.5) bounds<0.0, 3.0>\n" +
+		"        b : double_array (1.0, 2.0) fixed_size<2>\n" +
+		"        c : string (x) one_of<x, y>\n"
 
 	if got != want {
 		t.Errorf("Format() =\n%q\nwant\n%q", got, want)

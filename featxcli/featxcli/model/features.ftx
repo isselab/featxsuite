@@ -1,6 +1,11 @@
 RB-1-BASE:
     xor navigation : node {static early} ?
-        vel_max : double (1.6) <0.0, 3.0>
+        navigation_mode : string ("autonomous") 
+            one_of<"autonomous", "manual">
+        vel_min : double (0.5) 
+            bounds<0.0, 0.5>
+        vel_max : double (1.6) 
+            bounds<1.5, 3.0>
         to_loading : node {dynamic late}
             [square && attach && lift]
         to_delivery : node {dynamic late}

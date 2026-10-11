@@ -118,16 +118,12 @@
           "name": "support.constant.binding-time.featx"
         },
         {
+          "match": "\\b(bounds|gt|gt_eq|lt|lt_eq|one_of|fixed_size|size_gt|size_lt|not_empty)\\b(?=\\s*<)",
+          "name": "support.function.validator.featx"
+        },
+        {
           "match": "<<|>>|<|>",
           "name": "punctuation.section.angle.featx"
-        },
-        {
-          "match": "!",
-          "name": "keyword.operator.logical.not.featx"
-        },
-        {
-          "match": "#",
-          "name": "constant.language.open-end.featx"
         },
         {
           "match": "[{}]",

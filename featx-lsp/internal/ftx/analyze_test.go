@@ -155,10 +155,10 @@ func TestCrossCheckIgnoresMismatchedKinds(t *testing.T) {
 // which kinds a validator was not rather than what it constrains.
 func TestAnalyzeStrictRangesAreCheckedToo(t *testing.T) {
 	cases := map[string]string{
-		`p : string (fast) <!0.0, #>`:  `a range needs a numeric type, and "p" is a string`,
-		`p : double (5.0) <!10.0, #>`:  "the value 5.0 is below the permitted minimum 10.0",
-		`p : double (10.0) <!10.0, #>`: "the value 10.0 equals the excluded minimum 10.0",
-		`p : double (3.0) <#, !3.0>`:   "the value 3.0 equals the excluded maximum 3.0",
+		`p : string (fast) gt<0.0>`:  `gt<> needs a numeric type, and "p" is a string`,
+		`p : double (5.0) gt<10.0>`:  "the value 5.0 is below the permitted minimum 10.0",
+		`p : double (10.0) gt<10.0>`: "the value 10.0 equals the excluded minimum 10.0",
+		`p : double (3.0) lt<3.0>`:   "the value 3.0 equals the excluded maximum 3.0",
 	}
 
 	for entry, want := range cases {
@@ -173,9 +173,9 @@ func TestAnalyzeStrictRangesAreCheckedToo(t *testing.T) {
 // An inclusive bound admits its own value, so the boundary is legal there.
 func TestAnalyzeInclusiveBoundaryIsAccepted(t *testing.T) {
 	for _, entry := range []string{
-		`p : double (10.0) <10.0, #>`,
-		`p : double (3.0) <#, 3.0>`,
-		`p : double (3.0) <0.0, 3.0>`,
+		`p : double (10.0) gt_eq<10.0>`,
+		`p : double (3.0) lt_eq<3.0>`,
+		`p : double (3.0) bounds<0.0, 3.0>`,
 	} {
 		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        " + entry + "\n")
 

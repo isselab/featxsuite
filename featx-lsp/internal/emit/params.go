@@ -192,49 +192,50 @@ func renderNode(node *ftx.Feature, params []*ftx.Feature) []byte {
 	return []byte(sb.String())
 }
 
-// validation renders the parameter's validator as the library spells it.
+// validation renders a parameter's validators as the library spells them.
 //
-// One validator in the model is not always one validator in the output. bounds
-// includes both of its ends, so a range with an excluded end becomes a pair of
-// one-sided validators instead; the library applies each in turn, which gives
-// the same effect.
+// A validator is named in the model by the same name the library uses, so each
+// becomes one key with its arguments. Nothing has to be translated or split:
+// where a range with an excluded end once had to become a pair of one-sided
+// validators, the model now says gt and lt directly.
 func validation(p *ftx.Feature) string {
-	v := p.Validator
-	if v.Kind == ftx.ValidatorNone {
+	if len(p.Validators) == 0 {
 		return ""
 	}
 
 	element := p.Type.Element()
 
-	switch v.Kind {
-	case ftx.ValidatorOneOf:
-		// one_of takes a list of permitted values, nested one level because
-		// the library passes it as a single argument.
-		return fmt.Sprintf("      %s: [%s]\n", v.Kind, list(element, v.Args))
+	var sb strings.Builder
 
-	case ftx.ValidatorFixedSize:
-		return fmt.Sprintf("      %s: [%s]\n", v.Kind, v.Args[0])
-
-	case ftx.ValidatorBounds:
-		if !v.LowerExclusive && !v.UpperExclusive {
-			return fmt.Sprintf("      %s: %s\n", v.Kind, list(element, v.Args))
+	for _, v := range p.Validators {
+		if v.Kind == ftx.ValidatorNone {
+			continue
 		}
 
-		lower, upper := ftx.ValidatorGtEq, ftx.ValidatorLtEq
-		if v.LowerExclusive {
-			lower = ftx.ValidatorGt
-		}
-		if v.UpperExclusive {
-			upper = ftx.ValidatorLt
-		}
+		spec := v.Kind.Spec()
 
-		return fmt.Sprintf("      %s: [%s]\n      %s: [%s]\n",
-			lower, scalar(element, v.Args[0]),
-			upper, scalar(element, v.Args[1]))
+		switch {
+		case spec.MaxArgs == 0:
+			// A validator taking no arguments still needs a list, which the
+			// generator reads as "no arguments".
+			fmt.Fprintf(&sb, "      %s: []\n", v.Kind.Library())
 
-	default:
-		return fmt.Sprintf("      %s: %s\n", v.Kind, list(element, v.Args))
+		case spec.Nested:
+			// The library takes these as a single list argument, so they sit
+			// one level deeper.
+			fmt.Fprintf(&sb, "      %s: [%s]\n", v.Kind.Library(), list(element, v.Args))
+
+		case spec.Counts:
+			// A count is a number of elements or characters, never a value of
+			// the parameter's own type.
+			fmt.Fprintf(&sb, "      %s: [%s]\n", v.Kind.Library(), strings.Join(v.Args, ", "))
+
+		default:
+			fmt.Fprintf(&sb, "      %s: %s\n", v.Kind.Library(), list(element, v.Args))
+		}
 	}
+
+	return sb.String()
 }
 
 // literal renders a value, as a flow sequence for an array type.

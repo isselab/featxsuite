@@ -9,14 +9,14 @@ import (
 
 const paramModel = `RB-1-BASE:
     nav : node {dynamic late}
-        vel_max : double (1.5) <0.0, 3.0>
-        vel_min : double (1.0) <0.0, #>
-        tolerance : double (-0.01) <#, 0.0>
-        mode_pick : double (7.0) <<0.0, 3.0, 7.0>>
-        offsets : double_array (0.0, 0.0, 0.0, 0.0) <4>
+        vel_max : double (1.5) bounds<0.0, 3.0>
+        vel_min : double (1.0) gt_eq<0.0>
+        tolerance : double (-0.01) lt_eq<0.0>
+        mode_pick : double (7.0) one_of<0.0, 3.0, 7.0>
+        offsets : double_array (0.0, 0.0, 0.0, 0.0) fixed_size<4>
         retries : int (3)
         verbose : bool (true)
-        label : string (fast) <<slow, fast>>
+        label : string (fast) one_of<slow, fast>
     base : node {static early}
         timeout : double (0.5)
     plain : node {static early}
@@ -175,7 +175,7 @@ func keys(m map[string]string) []string {
 // nodes that run, so they are the ones that need it.
 const groupedModel = `RB-1-BASE:
     xor navigation : node {static early} ?
-        vel_max : double (1.6) <0.0, 3.0>
+        vel_max : double (1.6) bounds<0.0, 3.0>
         to_loading : node {dynamic late}
         to_delivery : node {dynamic late}
     shelf : node {static early} ?
@@ -281,14 +281,14 @@ func TestParamsGroupingWithNoAlternativesKeepsItsParameters(t *testing.T) {
 // exclusiveModel exercises every combination of open and closed ends.
 const exclusiveModel = `RB-1-BASE:
     demo : node {dynamic late}
-        at_least : double (1.0) <0.0, #>
-        more_than : double (1.0) <!0.0, #>
-        at_most : double (1.0) <#, 3.0>
-        less_than : double (1.0) <#, !3.0>
-        closed : double (1.5) <0.0, 3.0>
-        open : double (1.5) <!0.0, !3.0>
-        half_lo : double (1.5) <!0.0, 3.0>
-        half_hi : double (1.5) <0.0, !3.0>
+        at_least : double (1.0) gt_eq<0.0>
+        more_than : double (1.0) gt<0.0>
+        at_most : double (1.0) lt_eq<3.0>
+        less_than : double (1.0) lt<3.0>
+        closed : double (1.5) bounds<0.0, 3.0>
+        open : double (1.5) gt<0.0> lt<3.0>
+        half_lo : double (1.5) gt<0.0> lt_eq<3.0>
+        half_hi : double (1.5) gt_eq<0.0> lt<3.0>
 `
 
 func TestParamsExclusiveBoundsUseTheStrictValidators(t *testing.T) {

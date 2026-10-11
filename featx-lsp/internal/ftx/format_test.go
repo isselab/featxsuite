@@ -2,22 +2,22 @@ package ftx
 
 import "testing"
 
-// Every validator form has to survive formatting. Rebuilding one from its
-// arguments alone dropped the `#`, so `<0.0, #>` came back as `<0.0>` and read
-// as a fixed size: a silent change of meaning on format.
+// Every validator form has to survive formatting, including a parameter
+// carrying several.
 func TestFormatPreservesEveryValidatorForm(t *testing.T) {
 	src := `RB-1-BASE:
     demo : node {dynamic late}
-        a : double (1.0) <0.0, #>
-        b : double (1.0) <#, 3.0>
-        c : double (1.0) <!0.0, #>
-        d : double (1.0) <#, !3.0>
-        e : double (1.5) <!0.0, !3.0>
-        f : double (1.5) <!0.0, 3.0>
-        g : double (1.5) <0.0, !3.0>
-        h : double (1.5) <0.0, 3.0>
-        i : double_array (0.0) <4>
-        j : string (fast) <<slow, fast>>
+        a : double (1.5) bounds<0.0, 3.0>
+        b : double (1.0) gt<0.0>
+        c : double (1.0) gt_eq<0.0>
+        d : double (1.0) lt<3.0>
+        e : double (3.0) lt_eq<3.0>
+        f : string (fast) one_of<slow, fast>
+        g : double_array (0.0, 0.0) fixed_size<2>
+        h : string (autonomous) size_gt<2>
+        i : string (autonomous) size_lt<20>
+        j : string (autonomous) not_empty<>
+        k : string (autonomous) not_empty<> size_gt<2> size_lt<20>
 `
 
 	out, _ := Format(Parse(src))
