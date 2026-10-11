@@ -234,3 +234,69 @@ func TestAnalyzeComparisonsPairWithoutBounds(t *testing.T) {
 		}
 	}
 }
+
+// An enumeration says which values are permitted, so their lengths follow from
+// it and a length validator beside it has nothing left to decide.
+func TestAnalyzeEnumerationStandsAloneAgainstSizes(t *testing.T) {
+	for _, src := range []string{
+		"one_of<autonomous, manual> size_lt<13>",
+		"one_of<autonomous, manual> size_gt<2>",
+		"one_of<autonomous, manual> fixed_size<6>",
+		"one_of<autonomous, manual> not_empty<>",
+	} {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : string (manual) " + src + "\n")
+
+		var found bool
+		for _, d := range Analyze(f) {
+			if strings.Contains(d.Message, "cannot be written beside one_of<>") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: accepted; got %v", src, messages(Analyze(f)))
+		}
+	}
+}
+
+// A comparison beside an enumeration narrows it rather than duplicating it, so
+// it stays legal as long as something survives.
+func TestAnalyzeEnumerationNarrowedByAComparison(t *testing.T) {
+	f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (2.0) one_of<1.0, 2.0, 3.0> gt<1.5>\n")
+
+	for _, d := range Analyze(f) {
+		if d.Severity == SeverityError {
+			t.Errorf("a narrowing was rejected: %q", d.Message)
+		}
+	}
+}
+
+// When nothing the enumeration permits is acceptable, no default would have
+// helped: the fault is in the validators, not the value.
+func TestAnalyzeEnumerationWithNothingLeft(t *testing.T) {
+	cases := []string{
+		"double (2.0) one_of<1.0, 2.0, 3.0> gt<5.0>",
+		"double (2.0) one_of<1.0, 2.0> lt<0.5>",
+		"double (2.0) one_of<1.0, 2.0> gt<1.0> lt<1.5>",
+	}
+
+	for _, src := range cases {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : " + src + "\n")
+
+		want := "no value one_of<> permits satisfies the other validators, so nothing is acceptable"
+		if !hasMessage(Analyze(f), want) {
+			t.Errorf("%s: missing %q; got %v", src, want, messages(Analyze(f)))
+		}
+	}
+}
+
+// An enumerated value is one element of an array, so it cannot settle the
+// array's own length and must not be judged against a size validator.
+func TestAnalyzeEnumerationOverArrayElementsIsNotSized(t *testing.T) {
+	f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double_array (1.0, 2.0) one_of<1.0, 2.0>\n")
+
+	for _, d := range Analyze(f) {
+		if strings.Contains(d.Message, "nothing is acceptable") {
+			t.Errorf("an array's elements were judged as its length: %q", d.Message)
+		}
+	}
+}

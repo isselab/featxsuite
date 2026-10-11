@@ -264,7 +264,153 @@ func checkValidator(ft *Feature) []Diagnostic {
 // caught before a node refuses every value it is given.
 func checkValidatorsTogether(ft *Feature) []Diagnostic {
 	out := checkBoundsIsAlone(ft)
-	return append(out, checkRangeIsSatisfiable(ft)...)
+	out = append(out, checkEnumerationIsAlone(ft)...)
+	out = append(out, checkRangeIsSatisfiable(ft)...)
+	return append(out, checkEnumerationIsSatisfiable(ft)...)
+}
+
+// checkEnumerationIsAlone reports a size validator written beside one_of.
+//
+// An enumeration says exactly which values are permitted, so their lengths
+// follow from it. A length constraint beside one either excludes none of them,
+// in which case it says nothing, or excludes some, in which case the
+// enumeration that was written is not the one that holds. Writing the
+// enumeration you mean says it once.
+func checkEnumerationIsAlone(ft *Feature) []Diagnostic {
+	var enumerated bool
+	for _, v := range ft.Validators {
+		if v.Kind == ValidatorOneOf {
+			enumerated = true
+		}
+	}
+
+	if !enumerated {
+		return nil
+	}
+
+	var out []Diagnostic
+
+	for _, v := range ft.Validators {
+		if !v.Kind.Spec().Counts && v.Kind != ValidatorNotEmpty {
+			continue
+		}
+
+		out = append(out, Diagnostic{
+			Range:    v.Range,
+			Severity: SeverityError,
+			Message: fmt.Sprintf(
+				"%s cannot be written beside %s, which already says which values are "+
+					"permitted and so what lengths they have; write the enumeration you mean",
+				v.Kind.Spec().Written(), ValidatorOneOf.Spec().Written()),
+		})
+	}
+
+	return out
+}
+
+// checkEnumerationIsSatisfiable reports an enumeration none of whose values
+// pass the other validators.
+//
+// A default outside the enumeration is already reported, but a parameter can
+// be worse off than that: when nothing it permits is acceptable, no default
+// would have helped, and the fault is in the validators rather than the value.
+func checkEnumerationIsSatisfiable(ft *Feature) []Diagnostic {
+	var enum *Validator
+	var others []Validator
+
+	for i, v := range ft.Validators {
+		switch {
+		case v.Kind == ValidatorOneOf:
+			enum = &ft.Validators[i]
+		case v.Kind.IsRange() || v.Kind.Spec().Counts || v.Kind == ValidatorNotEmpty:
+			others = append(others, v)
+		}
+	}
+
+	if enum == nil || len(others) == 0 || len(enum.Args) == 0 {
+		return nil
+	}
+
+	for _, candidate := range enum.Args {
+		if satisfiesAll(ft, candidate, others) {
+			return nil
+		}
+	}
+
+	return []Diagnostic{{
+		Range:    enum.Range,
+		Severity: SeverityError,
+		Message: fmt.Sprintf("no value %s permits satisfies the other validators, so nothing is acceptable",
+			ValidatorOneOf.Spec().Written()),
+	}}
+}
+
+// satisfiesAll reports whether one literal passes every given validator.
+func satisfiesAll(ft *Feature, literal string, vs []Validator) bool {
+	for _, v := range vs {
+		if !satisfies(ft, literal, v) {
+			return false
+		}
+	}
+	return true
+}
+
+// satisfies reports whether one literal passes one validator. A literal that
+// cannot be read as the validator's subject is treated as passing, since being
+// ill-typed is reported on its own.
+func satisfies(ft *Feature, literal string, v Validator) bool {
+	if v.Kind.IsRange() {
+		got, err := strconv.ParseFloat(literal, 64)
+		if err != nil {
+			return true
+		}
+
+		if v.Kind.HasLower() {
+			if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil {
+				if got < lo || (got == lo && v.Kind.LowerExcludes()) {
+					return false
+				}
+			}
+		}
+
+		if v.Kind.HasUpper() {
+			hi := v.Args[len(v.Args)-1]
+			if limit, err := strconv.ParseFloat(hi, 64); err == nil {
+				if got > limit || (got == limit && v.Kind.UpperExcludes()) {
+					return false
+				}
+			}
+		}
+
+		return true
+	}
+
+	length := len([]rune(unquote(literal)))
+	if ft.Type.IsArray() {
+		// An enumerated value is one element, so an array's length is not
+		// something an entry in the enumeration can decide.
+		return true
+	}
+
+	switch v.Kind {
+	case ValidatorNotEmpty:
+		return length > 0
+	case ValidatorFixedSize, ValidatorSizeGt, ValidatorSizeLt:
+		want, err := strconv.Atoi(v.Args[0])
+		if err != nil {
+			return true
+		}
+		switch v.Kind {
+		case ValidatorFixedSize:
+			return length == want
+		case ValidatorSizeGt:
+			return length > want
+		default:
+			return length < want
+		}
+	}
+
+	return true
 }
 
 // checkBoundsIsAlone reports a comparison or an enumeration written beside

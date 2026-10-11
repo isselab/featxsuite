@@ -351,11 +351,25 @@ The first five need a numeric type. `one_of` takes any parameter. The last four
 measure a **length**, which a `string` and an array both have, so
 `fixed_size<8>` is eight characters on a string and eight elements on an array.
 
-`bounds<>` must stand alone. It gives both ends at once, so a comparison or an
-enumeration written beside it states a limit the parameter already has, either
-repeating one end or disagreeing with it. A range open at one end is therefore
-written as the pair it is — `gt<0.0> lt_eq<3.0>` — rather than as `bounds<>`
-with a correction after it.
+Two validators have to stand alone, because each already decides what the
+others would.
+
+**`bounds<>`** gives both ends at once, so a comparison or an enumeration
+written beside it states a limit the parameter already has, either repeating
+one end or disagreeing with it. A range open at one end is therefore written as
+the pair it is — `gt<0.0> lt_eq<3.0>` — rather than as `bounds<>` with a
+correction after it.
+
+**`one_of<>`** says exactly which values are permitted, so their lengths follow
+from it. A length validator beside one either excludes none of them, saying
+nothing, or excludes some, in which case the enumeration written is not the one
+that holds. Writing the enumeration you mean says it once.
+
+A comparison beside `one_of<>` is different: it narrows the enumeration rather
+than duplicating it, so it stays legal — as long as something survives.
+`one_of<1.0, 2.0, 3.0> gt<1.5>` is accepted; `one_of<1.0, 2.0, 3.0> gt<5.0>` is
+reported, because nothing the parameter permits is acceptable and no default
+would have helped.
 
 A parameter may otherwise carry **several** validators. The library applies
 each in turn, so a length range is a pair of them:
@@ -448,7 +462,8 @@ Semantics, per document:
 - a validator that cannot apply: a range on a non-numeric type, a size on a
   scalar, a validator on a node, an unknown name, the wrong number of
   arguments, a validator written twice, a comparison or an enumeration beside
-  `bounds<>`, a reversed range, a pair nothing can satisfy, or a `fixed_size`
+  `bounds<>`, a length validator beside `one_of<>`, an enumeration none of
+  whose values pass the other validators, a reversed range, a pair nothing can satisfy, or a `fixed_size`
   that disagrees with the value's length
 - a default its own validator rejects: outside a range, or absent from an
   enumeration
