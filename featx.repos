@@ -1,17 +1,19 @@
-# Workspace layout for FeatX, for use with vcstool:
+# The repositories this workspace needs besides this one, for use with
+# vcstool:
 #
-#     mkdir -p ~/ros2_ws/src && cd ~/ros2_ws
-#     vcs import src < featx.repos
+#     cd ~/ros2_ws
+#     vcs import src < src/featx_suite/featx.repos
 #
-# rclpy_components is kept in a repository of its own because nothing in it
-# depends on FeatX: it supplies for rclpy what rclcpp_components supplies for
-# rclcpp, and is offered to ros2/rclpy under issue 575. Should it be released
-# into a ROS distribution, drop its entry here and let rosdep resolve it.
+# featx_suite is deliberately not listed. It is the repository this file lives
+# in, so importing it would check out whatever branch is named here over
+# whatever you are working on, and discard anything staged. You do not import
+# the repository you are standing in.
+#
+# rclpy_components is kept separately because nothing in it depends on FeatX:
+# it supplies for rclpy what rclcpp_components supplies for rclcpp, and is
+# offered to ros2/rclpy under issue 575. Should it be released into a ROS
+# distribution, drop this entry and let rosdep resolve it.
 repositories:
-  featx_suite:
-    type: git
-    url: git@github.com:isselab/featxsuite.git
-    version: main
   rclpy_components:
     type: git
     url: git@github.com:JGyimah/rclpy_components.git
