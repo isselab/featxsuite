@@ -572,9 +572,15 @@ func (f *Feature) DefaultText() string {
 // ValidatorText renders the angle-bracketed validator as it appears in source,
 // or "" when the feature has none.
 func (f *Feature) ValidatorText() string {
-	parts := make([]string, 0, len(f.Validators))
+	return validatorsText(f.InlineValidators())
+}
 
-	for _, v := range f.Validators {
+// validatorsText renders validators as they are written: a name, then its
+// arguments in angle brackets.
+func validatorsText(vs []Validator) string {
+	parts := make([]string, 0, len(vs))
+
+	for _, v := range vs {
 		if v.Kind == ValidatorNone {
 			continue
 		}
@@ -582,6 +588,44 @@ func (f *Feature) ValidatorText() string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// InlineValidators are the validators written on the feature's own line.
+//
+// Where a validator sits is the author's choice and is kept: a parameter with
+// one validator reads well on a single line, while several read better stacked
+// beneath it, as constraints are. The line each was written on is what says
+// which was meant.
+func (f *Feature) InlineValidators() []Validator {
+	var out []Validator
+
+	for _, v := range f.Validators {
+		if v.Range.Line == f.Line {
+			out = append(out, v)
+		}
+	}
+
+	return out
+}
+
+// ValidatorLines are the validators written beneath the feature, grouped by
+// the line they share, in the order they appear.
+func (f *Feature) ValidatorLines() [][]Validator {
+	var out [][]Validator
+
+	last := -1
+	for _, v := range f.Validators {
+		if v.Range.Line == f.Line {
+			continue
+		}
+		if v.Range.Line != last {
+			out = append(out, nil)
+			last = v.Range.Line
+		}
+		out[len(out)-1] = append(out[len(out)-1], v)
+	}
+
+	return out
 }
 
 // Binding renders the feature's binding pair as it appears in source.
