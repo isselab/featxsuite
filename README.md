@@ -683,7 +683,8 @@ the model and the schema use the same word: `bounds<0.0, 3.0>` admits both
 ends, `gt<0.0> lt<3.0>` neither, and `gt<0.0> lt_eq<3.0>` only the upper one. A
 parameter may carry several, which the library applies in turn, and a `string`
 or an array may constrain its length with `fixed_size<8>`, `size_gt<2>`,
-`size_lt<20>` or `not_empty<>`.
+`size_lt<20>` or `not_empty<>`. An array's *elements* cannot be constrained
+yet — the library's `element_bounds` and `unique` have no spelling here.
 
 `bounds<0.0, 3.0>` and `one_of<...>` each stand alone: the first gives both
 ends, the second gives the permitted values and so their lengths, and anything

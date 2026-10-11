@@ -357,6 +357,15 @@ The first five need a numeric type. `one_of` takes any parameter. The last four
 measure a **length**, which a `string` and an array both have, so
 `fixed_size<8>` is eight characters on a string and eight elements on an array.
 
+An array can therefore be constrained in its length but not yet in its
+elements. `generate_parameter_library` also offers `element_bounds`,
+`lower_element_bounds`, `upper_element_bounds`, `unique` and `subset_of`, which
+hold over every element rather than over the value as a whole; none of them has
+a spelling here yet, and an unknown name says which validators do exist. Note
+that `bounds<>` on an array is **not** the element-wise one: the library reads
+it as a single value, so `element_bounds` is what "every element in range"
+needs.
+
 Two validators have to stand alone, because each already decides what the
 others would.
 
@@ -389,8 +398,8 @@ constraint sits beneath its feature. Which you choose is kept — the formatter
 moves neither onto the other:
 
 ```
-mode : string ("autonomous")
-    one_of<"autonomous", "manual">
+mode : string (autonomous)
+    not_empty<>
     size_lt<20>
 ```
 
