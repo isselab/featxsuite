@@ -1,6 +1,9 @@
 package ftx
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAnalyzeRejectsSelectionInModel(t *testing.T) {
 	f := Parse("M:\n    nav : node {static early} *\n")
@@ -182,6 +185,51 @@ func TestAnalyzeInclusiveBoundaryIsAccepted(t *testing.T) {
 		for _, d := range Analyze(f) {
 			if d.Severity == SeverityError {
 				t.Errorf("%s: unexpected error %q", entry, d.Message)
+			}
+		}
+	}
+}
+
+// bounds gives both ends, so anything else constraining the value states a
+// limit the parameter already has.
+func TestAnalyzeBoundsStandsAlone(t *testing.T) {
+	conflicts := map[string]string{
+		"bounds<0.0, 3.0> gt<1.0>":          "gt<>",
+		"bounds<0.0, 3.0> gt_eq<1.0>":       "gt_eq<>",
+		"bounds<0.0, 3.0> lt<2.0>":          "lt<>",
+		"bounds<0.0, 3.0> lt_eq<2.0>":       "lt_eq<>",
+		"bounds<0.0, 3.0> one_of<1.0, 1.5>": "one_of<>",
+	}
+
+	for src, named := range conflicts {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.5) " + src + "\n")
+
+		var found bool
+		for _, d := range Analyze(f) {
+			if strings.Contains(d.Message, named) && strings.Contains(d.Message, "bounds<>") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: %s beside bounds<> was accepted; got %v", src, named, messages(Analyze(f)))
+		}
+	}
+}
+
+// The pair that replaces a one-sided bounds has to stay legal, or there is no
+// way to write a range open at an end.
+func TestAnalyzeComparisonsPairWithoutBounds(t *testing.T) {
+	for _, src := range []string{
+		"gt<0.0> lt<3.0>",
+		"gt<0.0> lt_eq<3.0>",
+		"gt_eq<0.0> lt<3.0>",
+		"bounds<0.0, 3.0>",
+	} {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.5) " + src + "\n")
+
+		for _, d := range Analyze(f) {
+			if d.Severity == SeverityError {
+				t.Errorf("%s: unexpected error %q", src, d.Message)
 			}
 		}
 	}

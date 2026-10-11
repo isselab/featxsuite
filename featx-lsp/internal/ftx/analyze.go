@@ -259,10 +259,70 @@ func checkValidator(ft *Feature) []Diagnostic {
 	return out
 }
 
-// checkValidatorsTogether reports validators that cannot all hold at once, so
-// a parameter no value can satisfy is caught before a node refuses every value
-// it is given.
+// checkValidatorsTogether reports validators that cannot all hold at once, or
+// that say the same thing twice over, so a parameter no value can satisfy is
+// caught before a node refuses every value it is given.
 func checkValidatorsTogether(ft *Feature) []Diagnostic {
+	out := checkBoundsIsAlone(ft)
+	return append(out, checkRangeIsSatisfiable(ft)...)
+}
+
+// checkBoundsIsAlone reports a comparison or an enumeration written beside
+// bounds.
+//
+// bounds gives both ends at once, so anything else that constrains the value
+// is either repeating one of them or disagreeing with it, and the model would
+// state the same limit in two places. A range open at one end is written as
+// the pair it is — gt with lt — rather than as bounds with a correction.
+func checkBoundsIsAlone(ft *Feature) []Diagnostic {
+	var hasBounds bool
+	for _, v := range ft.Validators {
+		if v.Kind == ValidatorBounds {
+			hasBounds = true
+		}
+	}
+
+	if !hasBounds {
+		return nil
+	}
+
+	var out []Diagnostic
+
+	for _, v := range ft.Validators {
+		var message string
+
+		switch v.Kind {
+		case ValidatorGt, ValidatorGtEq, ValidatorLt, ValidatorLtEq:
+			message = fmt.Sprintf(
+				"%s cannot be written beside %s, which already gives both ends; "+
+					"keep %s alone, or replace it with %s and %s",
+				v.Kind.Spec().Written(), ValidatorBounds.Spec().Written(),
+				ValidatorBounds.Spec().Written(),
+				ValidatorGt.Spec().Written(), ValidatorLt.Spec().Written())
+
+		case ValidatorOneOf:
+			message = fmt.Sprintf(
+				"%s cannot be written beside %s; an enumeration already says which "+
+					"values are permitted, so a range beside it either repeats it or "+
+					"rules some of them out",
+				v.Kind.Spec().Written(), ValidatorBounds.Spec().Written())
+
+		default:
+			continue
+		}
+
+		out = append(out, Diagnostic{
+			Range:    v.Range,
+			Severity: SeverityError,
+			Message:  message,
+		})
+	}
+
+	return out
+}
+
+// checkRangeIsSatisfiable reports bounds that no value can meet at once.
+func checkRangeIsSatisfiable(ft *Feature) []Diagnostic {
 	lower, upper := math.Inf(-1), math.Inf(1)
 	var lowerText, upperText string
 	var where Range

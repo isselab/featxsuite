@@ -684,6 +684,10 @@ parameter may carry several, which the library applies in turn, and a `string`
 or an array may constrain its length with `fixed_size<8>`, `size_gt<2>`,
 `size_lt<20>` or `not_empty<>`.
 
+`bounds<0.0, 3.0>` stands alone: it gives both ends, so a comparison or an
+enumeration beside it would state a limit the parameter already has. Write the
+pair instead when one end is open.
+
 Whether a parameter can be changed once set follows its node's binding mode,
 and the schema says so either way: `read_only: true` under a `static` node,
 which cannot be rebound, and `read_only: false` under a `dynamic` one.

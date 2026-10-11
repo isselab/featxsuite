@@ -351,8 +351,14 @@ The first five need a numeric type. `one_of` takes any parameter. The last four
 measure a **length**, which a `string` and an array both have, so
 `fixed_size<8>` is eight characters on a string and eight elements on an array.
 
-A parameter may carry **several** validators. The library applies each in turn,
-so a length range is a pair of them:
+`bounds<>` must stand alone. It gives both ends at once, so a comparison or an
+enumeration written beside it states a limit the parameter already has, either
+repeating one end or disagreeing with it. A range open at one end is therefore
+written as the pair it is — `gt<0.0> lt_eq<3.0>` — rather than as `bounds<>`
+with a correction after it.
+
+A parameter may otherwise carry **several** validators. The library applies
+each in turn, so a length range is a pair of them:
 
 ```
 mode : string ("autonomous") not_empty<> size_lt<20>
@@ -378,8 +384,9 @@ write instead.
 
 Beyond the type, the checker reports an unknown validator with the nearest
 match, the wrong number of arguments, a validator twice on one parameter, a
-pair that nothing can satisfy (`gt<10.0> lt<5.0>`), a range whose ends are
-reversed, and a default its own validators reject — including one too short or
+pair that nothing can satisfy (`gt<10.0> lt<5.0>`), a comparison written beside
+`bounds<>`, a range whose ends are reversed, and a default its own validators
+reject — including one too short or
 too long for a size. All of these would otherwise wait until the node started.
 
 ### Constraints
@@ -440,8 +447,9 @@ Semantics, per document:
 - a scalar given several values, or an array element of the wrong type
 - a validator that cannot apply: a range on a non-numeric type, a size on a
   scalar, a validator on a node, an unknown name, the wrong number of
-  arguments, a validator written twice, a reversed range, a pair nothing can
-  satisfy, or a `fixed_size` that disagrees with the value's length
+  arguments, a validator written twice, a comparison or an enumeration beside
+  `bounds<>`, a reversed range, a pair nothing can satisfy, or a `fixed_size`
+  that disagrees with the value's length
 - a default its own validator rejects: outside a range, or absent from an
   enumeration
 - `||` in an exclusion, where the connective makes no difference
