@@ -14,5 +14,5 @@ repositories:
     version: main
   rclpy_components:
     type: git
-    url: git@github.com:CHANGE-ME/rclpy_components.git
+    url: git@github.com:JGyimah/rclpy_components.git
     version: main
