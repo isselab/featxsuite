@@ -6,7 +6,7 @@
   <description>The binder for feature implementation</description>
   <author email="jude.gyimah87@gmail.com">Jude Gyimah</author>
   <maintainer email="jude.gyimah87@gmail.com">Jude Gyimah</maintainer>
-  <license>MIT</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

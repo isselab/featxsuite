@@ -30,7 +30,7 @@ setup(
         'Programming Language :: Python',
     ],
     description='A lightweight ROS 2 command line tool which extends feature models to support flexible feature binding.',
-    license='MIT',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
