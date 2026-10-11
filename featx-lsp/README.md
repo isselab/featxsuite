@@ -110,10 +110,12 @@ wrote featxcli/featxcli/model/to_loading_params.yaml
 
 The DSL's type names and validators were chosen to match the library's, so the
 mapping is direct. Two fields are derived rather than written: `description` is
-always blank, for a human to fill in, and `read_only` follows the **binding
-mode** of the node the specification is for — a `static` node cannot be
-rebound, so neither can its parameters, while a `dynamic` node's stay
-reconfigurable.
+always blank, for a human to fill in, and `read_only` states the **binding
+mode** of the node the specification is for: `true` for `static`, since such a
+node cannot be rebound and so neither can its parameters, and `false` for
+`dynamic`, whose parameters stay reconfigurable. Both are written out rather
+than leaving the false case to the generator's default, so a specification
+states what the model says instead of leaving it to be read from an absence.
 
 A parameter written at a **grouping** is declared on each of its alternatives
 rather than on the grouping itself. A grouping is a choice point: its children

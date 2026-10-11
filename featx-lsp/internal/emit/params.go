@@ -46,9 +46,9 @@ func (p ParamFile) FileName() string {
 //
 // The DSL's type names were chosen to match the library's, so no translation
 // is needed. Two things are derived rather than written: `description` is
-// always blank, and `read_only` follows the binding mode of the node the
-// parameter ends up on, since a statically bound node cannot be rebound and so
-// neither can its parameters.
+// always blank, and `read_only` states the binding mode of the node the
+// parameter ends up on — true for static, false for dynamic — since a
+// statically bound node cannot be rebound and so neither can its parameters.
 //
 // A grouping is a choice point rather than a worker: its children are the
 // alternatives, and it is one of them that runs. A parameter written at a
@@ -168,12 +168,20 @@ func renderNode(node *ftx.Feature, params []*ftx.Feature) []byte {
 		sb.WriteString("    description: \"\"\n")
 
 		// A statically bound node is fixed once bound, so its parameters are
-		// not reconfigurable either. This follows the node the specification
-		// is being written for, not the parameter's place in the model: a
-		// parameter handed down from a grouping belongs to the alternative
-		// that received it, and is as reconfigurable as that alternative is.
-		if node.Mode == ftx.ModeStatic {
+		// not reconfigurable either; a dynamic one's stay reconfigurable.
+		// Both are written out rather than leaning on the generator's default
+		// for the false case, so that a specification states what the model
+		// says instead of leaving it to be inferred from an absence.
+		//
+		// This follows the node the specification is being written for, not
+		// the parameter's place in the model: a parameter handed down from a
+		// grouping belongs to the alternative that received it, and is as
+		// reconfigurable as that alternative is.
+		switch node.Mode {
+		case ftx.ModeStatic:
 			sb.WriteString("    read_only: true\n")
+		case ftx.ModeDynamic:
+			sb.WriteString("    read_only: false\n")
 		}
 
 		if v := validation(p); v != "" {

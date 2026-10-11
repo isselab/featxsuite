@@ -679,6 +679,10 @@ generates C++ enforcing both the default and the bounds. Setting `vel_max` to
 A bound is inclusive unless `!` excludes it: `<0.0, 3.0>` admits both ends,
 `<!0.0, !3.0>` neither, and `<!0.0, 3.0>` only the upper one.
 
+Whether a parameter can be changed once set follows its node's binding mode,
+and the schema says so either way: `read_only: true` under a `static` node,
+which cannot be rebound, and `read_only: false` under a `dynamic` one.
+
 A parameter written at a grouping belongs to each of its alternatives, since
 those are the nodes that run and a ROS parameter belongs to one node.
 

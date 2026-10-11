@@ -106,11 +106,25 @@ func TestParamsTypesAndValues(t *testing.T) {
 func TestParamsReadOnlyFollowsBindingMode(t *testing.T) {
 	got := render(t, paramModel)
 
-	if strings.Contains(got["nav"], "read_only") {
+	if !strings.Contains(got["nav"], "read_only: false") {
 		t.Errorf("a dynamic node's parameters must stay reconfigurable:\n%s", got["nav"])
 	}
 	if !strings.Contains(got["base"], "read_only: true") {
 		t.Errorf("a static node's parameters must be read-only:\n%s", got["base"])
+	}
+}
+
+// Both values are written out. Leaving the false case to the generator's
+// default would make a specification silent about something the model states.
+func TestParamsReadOnlyIsAlwaysStated(t *testing.T) {
+	for node, spec := range render(t, paramModel) {
+		params := strings.Count(spec, "\n    type: ")
+		stated := strings.Count(spec, "\n    read_only: ")
+
+		if params != stated {
+			t.Errorf("%s: %d parameter(s) but %d read_only line(s):\n%s",
+				node, params, stated, spec)
+		}
 	}
 }
 
@@ -217,8 +231,8 @@ func TestParamsPlainNodeKeepsItsOwnParameters(t *testing.T) {
 func TestParamsReadOnlyFollowsTheReceivingNode(t *testing.T) {
 	got := render(t, groupedModel)
 
-	if strings.Contains(got["to_loading"], "read_only") {
-		t.Errorf("a dynamically bound alternative was marked read_only:\n%s", got["to_loading"])
+	if !strings.Contains(got["to_loading"], "read_only: false") {
+		t.Errorf("a dynamically bound alternative was not left reconfigurable:\n%s", got["to_loading"])
 	}
 	if !strings.Contains(got["shelf"], "read_only: true") {
 		t.Errorf("a statically bound node was not marked read_only:\n%s", got["shelf"])
