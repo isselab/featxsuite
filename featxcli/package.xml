@@ -4,7 +4,8 @@
   <name>featxcli</name>
   <version>0.0.1</version>
   <description>Controlled Configuration with Flexible Feature Binding</description>
-  <maintainer email="jude.gyimah87@gmail.com">fr0b0</maintainer>
+  <author email="jude.gyimah87@gmail.com">Jude Gyimah</author>
+  <maintainer email="jude.gyimah87@gmail.com">Jude Gyimah</maintainer>
   <license>MIT</license>
 
   <depend>rclpy_components</depend>

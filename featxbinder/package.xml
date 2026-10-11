@@ -4,7 +4,8 @@
   <name>featxbinder</name>
   <version>0.0.0</version>
   <description>The binder for feature implementation</description>
-  <maintainer email="fr0b0@fr0b0.com">fr0b0</maintainer>
+  <author email="jude.gyimah87@gmail.com">Jude Gyimah</author>
+  <maintainer email="jude.gyimah87@gmail.com">Jude Gyimah</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
