@@ -93,6 +93,10 @@ var typeNames = map[Type]string{
 
 func (t Type) String() string { return typeNames[t] }
 
+// TypeNamed returns the type a word names, for a caller outside the parser
+// that needs to know whether a type has already been written.
+func TypeNamed(word string) (Type, bool) { return typeFrom(word) }
+
 // IsValue reports whether the type carries a value rather than behaviour.
 func (t Type) IsValue() bool {
 	return t != TypeUnset && t != TypeNode

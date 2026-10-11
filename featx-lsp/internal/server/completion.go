@@ -54,6 +54,79 @@ var (
 	}
 )
 
+// validatorItems are the validators that may be written on a given type,
+// taken from the one description of each rather than listed again here, so a
+// validator added to the language is offered without this file changing.
+func validatorItems(t ftx.Type) []lsp.CompletionItem {
+	var items []lsp.CompletionItem
+
+	for _, spec := range ftx.ValidatorSpecs() {
+		if !spec.Domain.Accepts(t) {
+			continue
+		}
+
+		// One that takes no arguments is complete as written. One that takes
+		// some is left open, so the cursor sits where its arguments go rather
+		// than past a bracket that has to be stepped back over. Snippets would
+		// place it exactly, but a client that does not support them would
+		// insert the placeholder as text.
+		insert := spec.Name + "<"
+		if spec.MaxArgs == 0 {
+			insert = spec.Name + "<>"
+		}
+
+		items = append(items, lsp.CompletionItem{
+			Label:         spec.Name,
+			Kind:          lsp.CompletionItemKindFunction,
+			Detail:        "validator",
+			Documentation: validatorDoc(spec),
+			InsertText:    insert,
+		})
+	}
+
+	return items
+}
+
+func validatorDoc(spec ftx.ValidatorSpec) string {
+	return fmt.Sprintf("`%s` — generates `%s`, and needs %s",
+		spec.Name, spec.Written(), spec.Domain)
+}
+
+// typeAlreadyWritten reports the type named in the text after a colon, which
+// says whether the cursor is still choosing a type or has moved past one.
+func typeAlreadyWritten(after string) (ftx.Type, bool) {
+	for _, word := range strings.Fields(after) {
+		if t, ok := ftx.TypeNamed(word); ok {
+			return t, true
+		}
+	}
+	return ftx.TypeUnset, false
+}
+
+// entryAbove finds the entry a continuation line belongs to: the nearest one
+// declared above it and indented less.
+func entryAbove(file *ftx.File, line, indent int) *ftx.Feature {
+	var best *ftx.Feature
+
+	var walk func(ft *ftx.Feature)
+	walk = func(ft *ftx.Feature) {
+		if ft.Line < line && ft.Indent < indent {
+			if best == nil || ft.Line > best.Line {
+				best = ft
+			}
+		}
+		for _, child := range ft.Children {
+			walk(child)
+		}
+	}
+
+	for _, ft := range file.TopLevel() {
+		walk(ft)
+	}
+
+	return best
+}
+
 func (s *Server) completion(m *jsonrpc.Message) error {
 	var p lsp.TextDocumentPositionParams
 	if err := unmarshal(m.Params, &p); err != nil {
@@ -69,7 +142,7 @@ func (s *Server) completion(m *jsonrpc.Message) error {
 	line := lineAt(src, p.Position.Line)
 	prefix := line[:byteOffset(line, p.Position.Character)]
 
-	items := s.completionsFor(file, p.TextDocument.URI, prefix)
+	items := s.completionsFor(file, p.TextDocument.URI, prefix, p.Position.Line)
 	if items == nil {
 		items = []lsp.CompletionItem{}
 	}
@@ -81,7 +154,7 @@ func (s *Server) completion(m *jsonrpc.Message) error {
 // inside unclosed braces only binding words are legal, past the colon a type
 // is, inside a bracketed constraint a feature name is, and at the start of a
 // line a grouping or a feature name.
-func (s *Server) completionsFor(file *ftx.File, uri, prefix string) []lsp.CompletionItem {
+func (s *Server) completionsFor(file *ftx.File, uri, prefix string, line int) []lsp.CompletionItem {
 	// Braces bind tightest: a cursor inside them wants a mode or a time.
 	if open := strings.LastIndex(prefix, "{"); open > strings.LastIndex(prefix, "}") {
 		return bindingCompletions(prefix[open+1:])
@@ -92,8 +165,26 @@ func (s *Server) completionsFor(file *ftx.File, uri, prefix string) []lsp.Comple
 		return s.declaredFeatures(file, uri)
 	}
 
-	if strings.LastIndex(prefix, ":") >= 0 {
+	// Inside a validator's own brackets sit its arguments, which are values of
+	// the parameter's type; nothing here knows what they should be.
+	if open := strings.LastIndex(prefix, "<"); open > strings.LastIndex(prefix, ">") {
+		return nil
+	}
+
+	if colon := strings.LastIndex(prefix, ":"); colon >= 0 {
+		// A type comes first, and once one is written what follows it may be a
+		// validator. Which validators depends on the type, so only those that
+		// can apply are offered.
+		if t, written := typeAlreadyWritten(prefix[colon+1:]); written {
+			return validatorItems(t)
+		}
 		return typeItems
+	}
+
+	// A validator may also sit on its own line beneath the parameter it
+	// constrains, where there is no colon to go by.
+	if owner := entryAbove(file, line, indentOf(prefix)); owner != nil && owner.Type.IsValue() {
+		return validatorItems(owner.Type)
 	}
 
 	var items []lsp.CompletionItem
@@ -204,4 +295,17 @@ func (s *Server) unconfiguredFeatures(cfg *ftx.File, uri string) []lsp.Completio
 	}
 
 	return items
+}
+
+// indentOf counts the leading spaces of a line, which is how a continuation
+// line says which entry it belongs to.
+func indentOf(line string) int {
+	n := 0
+	for _, r := range line {
+		if r != ' ' {
+			break
+		}
+		n++
+	}
+	return n
 }

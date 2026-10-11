@@ -338,7 +338,9 @@ to state, and a configuration only selects features.
 
 Each validator is written by the name `generate_parameter_library` gives it,
 with its arguments after it, so the model and the generated schema use the same
-word:
+word. An editor completes these, offering only the ones the parameter's type
+accepts — ranges and `one_of` on a `double`, lengths and `one_of` on a
+`string`, and nothing at all on a node:
 
 | Written | Generated | Meaning |
 |---|---|---|
