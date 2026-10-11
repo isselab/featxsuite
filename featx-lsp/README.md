@@ -333,16 +333,35 @@ A parameter may constrain its own value in angle brackets, which map onto
 
 | Written | Generated | Meaning |
 |---|---|---|
-| `<0.0, 3.0>` | `bounds<>: [0.0, 3.0]` | within a range |
+| `<0.0, 3.0>` | `bounds<>: [0.0, 3.0]` | within a closed range |
 | `<0.0, #>` | `gt_eq<>: [0.0]` | at least, upper end open |
+| `<!0.0, #>` | `gt<>: [0.0]` | more than, upper end open |
 | `<#, 0.0>` | `lt_eq<>: [0.0]` | at most, lower end open |
+| `<#, !0.0>` | `lt<>: [0.0]` | less than, lower end open |
+| `<!0.0, !3.0>` | `gt<>: [0.0]` + `lt<>: [3.0]` | within an open range |
+| `<!0.0, 3.0>` | `gt<>: [0.0]` + `lt_eq<>: [3.0]` | half-open |
 | `<<0.0, 3.0, 7.0>>` | `one_of<>: [[0.0, 3.0, 7.0]]` | one of these |
 | `<4>` | `fixed_size<>: [4]` | an array's length |
 
-`#` marks an open end. A range needs a numeric type, `<n>` needs an array
-type, and the checker also reports a range whose ends are reversed and a
-default its own validator rejects — all of which would otherwise only surface
-when the node started.
+Two markers appear inside the brackets. `#` is an end that is not bounded at
+all, and `!` before a bound **excludes** it, the way it excludes a feature in a
+constraint. A bound without `!` is inclusive, so nothing already written
+changes meaning.
+
+`bounds<>` includes both of its ends and the library has no exclusive
+counterpart, so a range with an excluded end is emitted as a **pair** of
+one-sided validators. `validation` takes a list and the library applies each in
+turn, which comes to the same constraint. That pairing is what makes every
+combination of open and closed ends expressible; before it, a half-open range
+could not be written at all.
+
+`!` only ever excludes a bound, so it is rejected on an open end (`<!#, 3.0>`
+has nothing to exclude), on a size, and inside an enumeration, each with a
+message saying so.
+
+A range needs a numeric type, `<n>` needs an array type, and the checker also
+reports a range whose ends are reversed and a default its own validator
+rejects — all of which would otherwise only surface when the node started.
 
 ### Constraints
 

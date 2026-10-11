@@ -185,6 +185,11 @@ func renderNode(node *ftx.Feature, params []*ftx.Feature) []byte {
 }
 
 // validation renders the parameter's validator as the library spells it.
+//
+// One validator in the model is not always one validator in the output. bounds
+// includes both of its ends, so a range with an excluded end becomes a pair of
+// one-sided validators instead; the library applies each in turn, which gives
+// the same effect.
 func validation(p *ftx.Feature) string {
 	v := p.Validator
 	if v.Kind == ftx.ValidatorNone {
@@ -201,6 +206,23 @@ func validation(p *ftx.Feature) string {
 
 	case ftx.ValidatorFixedSize:
 		return fmt.Sprintf("      %s: [%s]\n", v.Kind, v.Args[0])
+
+	case ftx.ValidatorBounds:
+		if !v.LowerExclusive && !v.UpperExclusive {
+			return fmt.Sprintf("      %s: %s\n", v.Kind, list(element, v.Args))
+		}
+
+		lower, upper := ftx.ValidatorGtEq, ftx.ValidatorLtEq
+		if v.LowerExclusive {
+			lower = ftx.ValidatorGt
+		}
+		if v.UpperExclusive {
+			upper = ftx.ValidatorLt
+		}
+
+		return fmt.Sprintf("      %s: [%s]\n      %s: [%s]\n",
+			lower, scalar(element, v.Args[0]),
+			upper, scalar(element, v.Args[1]))
 
 	default:
 		return fmt.Sprintf("      %s: %s\n", v.Kind, list(element, v.Args))
@@ -230,8 +252,26 @@ func list(element ftx.Type, values []string) string {
 // scalar quotes a value only where YAML needs it, so that numbers and bools
 // stay numbers and bools.
 func scalar(t ftx.Type, value string) string {
-	if t == ftx.TypeString {
-		return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+	if t != ftx.TypeString {
+		return value
 	}
-	return value
+
+	// A string may be written with quotes or without: `(autonomous)` and
+	// `("autonomous")` are the same string. Escaping them instead of reading
+	// them as delimiters made the quotes part of the value, so a default
+	// written the quoted way reached the generated code still carrying them.
+	return `"` + strings.ReplaceAll(unquote(value), `"`, `\"`) + `"`
+}
+
+// unquote removes one matching pair of surrounding quotes, if there is one.
+func unquote(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+
+	if first, last := s[0], s[len(s)-1]; first == last && (first == '"' || first == '\'') {
+		return s[1 : len(s)-1]
+	}
+
+	return s
 }

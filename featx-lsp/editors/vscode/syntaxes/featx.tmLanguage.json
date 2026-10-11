@@ -122,6 +122,10 @@
           "name": "punctuation.section.angle.featx"
         },
         {
+          "match": "!",
+          "name": "keyword.operator.logical.not.featx"
+        },
+        {
           "match": "#",
           "name": "constant.language.open-end.featx"
         },

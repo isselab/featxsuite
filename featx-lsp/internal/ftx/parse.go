@@ -551,15 +551,19 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 
 	var (
 		args    []string
+		excl    []bool // whether each argument was written with a leading `!`
 		last    = open
 		closed  bool
 		current []string
+		curExcl bool
 	)
 
 	flush := func() {
 		if len(current) > 0 {
 			args = append(args, strings.Join(current, " "))
+			excl = append(excl, curExcl)
 			current = nil
+			curExcl = false
 		}
 	}
 
@@ -576,6 +580,21 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 				f.diag(SeverityError, rangeOf(ln, toks[i]), "expected a value before %q", ",")
 			}
 			flush()
+			continue
+		}
+
+		// A `!` introduces a bound, excluding it. Anywhere else in an
+		// argument it is not a value, so say so rather than folding it in.
+		if toks[i].text == "!" {
+			if len(current) > 0 {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"%q excludes a bound and belongs before it, as %q", "!", "<!0.0, 3.0>")
+			} else if curExcl {
+				f.diag(SeverityError, rangeOf(ln, toks[i]), "repeated %q", "!")
+			} else {
+				curExcl = true
+			}
+			last = toks[i]
 			continue
 		}
 
@@ -597,6 +616,16 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 
 	ft.Validator.Args = args
 
+	// Exclusion applies to a range's bound and nowhere else.
+	excluded := func() bool {
+		for _, e := range excl {
+			if e {
+				return true
+			}
+		}
+		return false
+	}
+
 	switch {
 	case oneOf:
 		ft.Validator.Kind = ValidatorOneOf
@@ -604,8 +633,17 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 			f.diag(SeverityError, ft.Validator.Range,
 				"%q needs at least one permitted value", "<<>>")
 		}
+		if excluded() {
+			f.diag(SeverityError, ft.Validator.Range,
+				"%q excludes a bound, and an enumeration has none; "+
+					"remove the value instead", "!")
+		}
 
 	case len(args) == 1:
+		if excluded() {
+			f.diag(SeverityError, ft.Validator.Range,
+				"%q excludes a bound, and a size is not one", "!")
+		}
 		if args[0] == "#" {
 			f.diag(SeverityError, ft.Validator.Range,
 				"%q on its own constrains nothing; write a size, a range or one open end", "#")
@@ -617,19 +655,37 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 	case len(args) == 2:
 		lowOpen, highOpen := args[0] == "#", args[1] == "#"
 
+		// There is no bound to exclude on an open end.
+		if (lowOpen && excl[0]) || (highOpen && excl[1]) {
+			f.diag(SeverityError, ft.Validator.Range,
+				"%q excludes a bound, but that end is %q, so there is no bound to exclude",
+				"!", "#")
+			ft.Validator.Kind = ValidatorNone
+			return i
+		}
+
 		switch {
 		case lowOpen && highOpen:
 			f.diag(SeverityError, ft.Validator.Range,
 				"both ends are %q, so this constrains nothing", "#")
 			ft.Validator.Kind = ValidatorNone
 		case highOpen:
+			// A one-sided range carries its strictness in the kind.
 			ft.Validator.Kind = ValidatorGtEq
+			if excl[0] {
+				ft.Validator.Kind = ValidatorGt
+			}
 			ft.Validator.Args = args[:1]
 		case lowOpen:
 			ft.Validator.Kind = ValidatorLtEq
+			if excl[1] {
+				ft.Validator.Kind = ValidatorLt
+			}
 			ft.Validator.Args = args[1:]
 		default:
 			ft.Validator.Kind = ValidatorBounds
+			ft.Validator.LowerExclusive = excl[0]
+			ft.Validator.UpperExclusive = excl[1]
 		}
 
 	case len(args) == 0:

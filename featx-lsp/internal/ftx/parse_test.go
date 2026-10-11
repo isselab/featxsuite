@@ -507,3 +507,81 @@ func hasMessage(ds []Diagnostic, want string) bool {
 	}
 	return false
 }
+
+func TestValidatorExclusiveBoundKinds(t *testing.T) {
+	cases := []struct {
+		src  string
+		kind ValidatorKind
+		args []string
+	}{
+		{"<0.0, #>", ValidatorGtEq, []string{"0.0"}},
+		{"<!0.0, #>", ValidatorGt, []string{"0.0"}},
+		{"<#, 3.0>", ValidatorLtEq, []string{"3.0"}},
+		{"<#, !3.0>", ValidatorLt, []string{"3.0"}},
+		{"<0.0, 3.0>", ValidatorBounds, []string{"0.0", "3.0"}},
+		{"<!0.0, !3.0>", ValidatorBounds, []string{"0.0", "3.0"}},
+	}
+
+	for _, c := range cases {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) " + c.src + "\n")
+		p := f.TopLevel()[0].Children[0]
+
+		if p.Validator.Kind != c.kind {
+			t.Errorf("%s: kind = %v, want %v", c.src, p.Validator.Kind, c.kind)
+		}
+		// The `!` is a marker, not part of the value.
+		if len(p.Validator.Args) != len(c.args) {
+			t.Fatalf("%s: args = %v, want %v", c.src, p.Validator.Args, c.args)
+		}
+		for i, want := range c.args {
+			if p.Validator.Args[i] != want {
+				t.Errorf("%s: args[%d] = %q, want %q", c.src, i, p.Validator.Args[i], want)
+			}
+		}
+	}
+}
+
+func TestValidatorExclusivityIsRecordedForBothEnds(t *testing.T) {
+	for _, c := range []struct {
+		src          string
+		lower, upper bool
+	}{
+		{"<0.0, 3.0>", false, false},
+		{"<!0.0, 3.0>", true, false},
+		{"<0.0, !3.0>", false, true},
+		{"<!0.0, !3.0>", true, true},
+	} {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) " + c.src + "\n")
+		v := f.TopLevel()[0].Children[0].Validator
+
+		if v.LowerExclusive != c.lower || v.UpperExclusive != c.upper {
+			t.Errorf("%s: lower=%v upper=%v, want lower=%v upper=%v",
+				c.src, v.LowerExclusive, v.UpperExclusive, c.lower, c.upper)
+		}
+	}
+}
+
+func TestValidatorExclusiveMisuseIsReported(t *testing.T) {
+	cases := map[string]string{
+		"<!#, 3.0>":       `"!" excludes a bound, but that end is "#", so there is no bound to exclude`,
+		"<0.0, !#>":       `"!" excludes a bound, but that end is "#", so there is no bound to exclude`,
+		"<!4>":            `"!" excludes a bound, and a size is not one`,
+		"<<!slow, fast>>": `"!" excludes a bound, and an enumeration has none; remove the value instead`,
+		"<0.0!, 3.0>":     `"!" excludes a bound and belongs before it, as "<!0.0, 3.0>"`,
+		"<!!0.0, 3.0>":    `repeated "!"`,
+	}
+
+	for src, want := range cases {
+		f := Parse("RB-1-BASE:\n    demo : node {dynamic late}\n        p : double (1.0) " + src + "\n")
+
+		var found bool
+		for _, d := range f.Diagnostics {
+			if d.Message == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: no diagnostic %q; got %v", src, want, messages(f.Diagnostics))
+		}
+	}
+}

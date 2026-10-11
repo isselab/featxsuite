@@ -135,18 +135,26 @@ func (t Type) Element() Type {
 // ValidatorKind is the constraint a parameter places on its own value. The
 // surface forms are angle brackets after the value:
 //
-//	<lo, hi>    bounds        both ends given
+//	<lo, hi>    bounds        both ends given, both inclusive
 //	<lo, #>     gt_eq         only a lower end
+//	<!lo, #>    gt            only a lower end, exclusive
 //	<#, hi>     lt_eq         only an upper end
+//	<#, !hi>    lt            only an upper end, exclusive
 //	<<a, b, c>> one_of        an enumeration
 //	<n>         fixed_size    an array's length
+//
+// A `!` before a bound excludes it. bounds<> has no exclusive form, so a range
+// with an excluded end is emitted as a pair of one-sided validators, which the
+// library applies in turn.
 type ValidatorKind int
 
 const (
 	ValidatorNone ValidatorKind = iota
 	ValidatorBounds
 	ValidatorGtEq
+	ValidatorGt
 	ValidatorLtEq
+	ValidatorLt
 	ValidatorOneOf
 	ValidatorFixedSize
 )
@@ -155,7 +163,9 @@ const (
 var validatorNames = map[ValidatorKind]string{
 	ValidatorBounds:    "bounds<>",
 	ValidatorGtEq:      "gt_eq<>",
+	ValidatorGt:        "gt<>",
 	ValidatorLtEq:      "lt_eq<>",
+	ValidatorLt:        "lt<>",
 	ValidatorOneOf:     "one_of<>",
 	ValidatorFixedSize: "fixed_size<>",
 }
@@ -168,6 +178,13 @@ type Validator struct {
 	Kind  ValidatorKind
 	Args  []string
 	Range Range
+
+	// LowerExclusive and UpperExclusive record a `!` written before a range's
+	// bound, which excludes that end. They are only meaningful for
+	// ValidatorBounds: a one-sided range carries its strictness in the kind
+	// itself, as gt against gt_eq.
+	LowerExclusive bool
+	UpperExclusive bool
 }
 
 // Op is the connective joining the operands of a constraint.
@@ -407,13 +424,47 @@ func (f *Feature) DefaultText() string {
 // ValidatorText renders the angle-bracketed validator as it appears in source,
 // or "" when the feature has none.
 func (f *Feature) ValidatorText() string {
-	switch f.Validator.Kind {
+	v := f.Validator
+
+	// The arguments alone do not say which form was written: a one-sided range
+	// keeps only the bound it has, so rebuilding from them turned `<0.0, #>`
+	// into `<0.0>`, which reads back as a fixed size. The kind decides the
+	// shape, and the arguments fill it in.
+	bound := func(value string, exclusive bool) string {
+		if exclusive {
+			return "!" + value
+		}
+		return value
+	}
+
+	switch v.Kind {
 	case ValidatorNone:
 		return ""
+
 	case ValidatorOneOf:
-		return "<<" + strings.Join(f.Validator.Args, ", ") + ">>"
+		return "<<" + strings.Join(v.Args, ", ") + ">>"
+
+	case ValidatorGtEq, ValidatorGt:
+		if len(v.Args) == 0 {
+			return ""
+		}
+		return "<" + bound(v.Args[0], v.Kind == ValidatorGt) + ", #>"
+
+	case ValidatorLtEq, ValidatorLt:
+		if len(v.Args) == 0 {
+			return ""
+		}
+		return "<#, " + bound(v.Args[0], v.Kind == ValidatorLt) + ">"
+
+	case ValidatorBounds:
+		if len(v.Args) < 2 {
+			return ""
+		}
+		return "<" + bound(v.Args[0], v.LowerExclusive) +
+			", " + bound(v.Args[1], v.UpperExclusive) + ">"
+
 	default:
-		return "<" + strings.Join(f.Validator.Args, ", ") + ">"
+		return "<" + strings.Join(v.Args, ", ") + ">"
 	}
 }
 

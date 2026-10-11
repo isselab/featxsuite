@@ -676,6 +676,9 @@ specification and delivers it to the package that builds the node, which
 generates C++ enforcing both the default and the bounds. Setting `vel_max` to
 `9.9` on a running node is then rejected, because the model said `<0.0, 3.0>`.
 
+A bound is inclusive unless `!` excludes it: `<0.0, 3.0>` admits both ends,
+`<!0.0, !3.0>` neither, and `<!0.0, 3.0>` only the upper one.
+
 A parameter written at a grouping belongs to each of its alternatives, since
 those are the nodes that run and a ROS parameter belongs to one node.
 
