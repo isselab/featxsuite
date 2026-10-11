@@ -8,46 +8,11 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(rclcpp_components REQUIRED)
 
 #package exports
 ament_export_include_directories(include)
 ament_export_dependencies(rclcpp)
-
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../featxcli/featxcli/model/configs.json" CONFIGS_JSON_STRING)
-
-# Get number of elements in "configs"
-string(JSON CONFIG_COUNT LENGTH ${CONFIGS_JSON_STRING} configs)
-
-math(EXPR CONFIG_LAST_INDEX "${CONFIG_COUNT} - 1")
-
-set(counter 0)
-
-# Loop through configs
-foreach(INDEX RANGE ${CONFIG_LAST_INDEX})
-    # Extract the object at this index
-    string(JSON CONFIG_OBJECT GET ${CONFIGS_JSON_STRING} configs ${INDEX})
-
-    # Extract individual fields from this object
-    string(JSON NAME GET ${CONFIG_OBJECT} name)
-    string(JSON IS_SELECTED GET ${CONFIG_OBJECT} isSelected)
-    string(JSON BINDING_TIME GET ${CONFIG_OBJECT} bindingTime)
-    string(JSON BINDING_MODE GET ${CONFIG_OBJECT} bindingMode)
-
-    message(STATUS "  Name: ${NAME}")
-
-    string(TOUPPER "${NAME}" NAME_UPPER)
-
-    if(IS_SELECTED STREQUAL "ON")
-        #message(NOTICE "${NAME} is selected")
-        math(EXPR counter "${counter} + 1")
-    endif()
-
-endforeach()
-
-message(NOTICE "Compiling ${counter} selected early feature(s)")
 
 # if(BUILD_TESTING)
 #   find_package(ament_lint_auto REQUIRED)
@@ -75,7 +40,6 @@ install(TARGETS
 
 install(DIRECTORY
   launch
-  config
   DESTINATION share/${PROJECT_NAME}
 )
 

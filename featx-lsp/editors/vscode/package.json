@@ -1,0 +1,85 @@
+{
+  "name": "featx",
+  "displayName": "FeatX",
+  "description": "Language support for the FeatX feature-modelling DSL (.ftx)",
+  "version": "0.7.1",
+  "publisher": "isselab",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isselab/featxsuite.git"
+  },
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:featx"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "featx",
+        "aliases": [
+          "FeatX",
+          "featx"
+        ],
+        "extensions": [
+          ".ftx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "featx",
+        "scopeName": "source.featx",
+        "path": "./syntaxes/featx.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "FeatX",
+      "properties": {
+        "featx.server.path": {
+          "type": "string",
+          "default": "featx-lsp",
+          "markdownDescription": "Path to the `featx-lsp` executable. A bare name is looked up on `PATH`."
+        },
+        "featx.server.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra arguments passed to `featx-lsp`."
+        },
+        "featx.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the traffic between VS Code and the language server to the FeatX output channel."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "featx.restartServer",
+        "title": "FeatX: Restart Language Server"
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.82.0"
+  }
+}

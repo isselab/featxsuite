@@ -13,7 +13,6 @@ class Configurator:
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.model_dir = os.path.join(self.base_dir, "model")
         self.all_configs = ""
-        self.parent_feature = ""
         self.issue_count = 0
 
     def readFeatures(self):
@@ -65,13 +64,13 @@ class Configurator:
     def get_binding_time(self, name):
         for cfg in self.all_configs['configs']:
             if cfg["name"] == name:
-                return cfg["bindingTime"]
+                return cfg.get("bindingTime")
         return None
     
     def get_binding_mode(self, name):
         for cfg in self.all_configs['configs']:
             if cfg["name"] == name:
-                return cfg["bindingMode"]
+                return cfg.get("bindingMode")
         return None
     
     def check_for_parent_feature(self, features, name):
@@ -95,27 +94,38 @@ class Configurator:
     def traverseModel(self, fx_model):
 
         if "sub" in fx_model:
-        
-            if fx_model['name'] != "root":
-                self.parent_feature = fx_model['name']
+
+            #the parent of these children is this node. It has to be a local:
+            #each child is recursed into before the next is checked, so an
+            #instance field would hold the last subtree visited rather than
+            #this node, and every rule below would compare against the wrong
+            #feature.
+            parent_feature = "" if fx_model['name'] == "root" else fx_model['name']
 
             for subObject in fx_model['sub']:
                 #find config and compare bindings
                 for config in self.all_configs['configs']:
                     if config['name'] == subObject['name']:
-                        if config['bindingTime'] != subObject['bindingTimeAllowed'] or config['bindingMode'] != subObject['bindingModeAllowed']:
+
+                        #a parameter has no binding of its own: it is bound with
+                        #the node it belongs to, so the configuration gives it no
+                        #{mode time} clause and the three binding rules below have
+                        #nothing to compare. Only the rules about selection apply.
+                        is_parameter = 'bindingTime' not in config or 'bindingMode' not in config
+
+                        if not is_parameter and (config['bindingTime'] != subObject['bindingTimeAllowed'] or config['bindingMode'] != subObject['bindingModeAllowed']):
                             logger.info(f" *Feature ({subObject['name']}): bindings not consistent")
                             self.issue_count = self.issue_count + 1
 
                         #selected static cannot depend on dynamic
-                        if config['bindingMode'] == "Static" and self.get_is_selected(subObject['name']) == True and self.get_binding_mode(self.parent_feature) == "Dynamic":
-                            logger.info(f" *Static and selected child {subObject['name']} depends on dynamic parent {self.parent_feature}")
+                        if not is_parameter and config['bindingMode'] == "Static" and self.get_is_selected(subObject['name']) == True and self.get_binding_mode(parent_feature) == "Dynamic":
+                            logger.info(f" *Static and selected child {subObject['name']} depends on dynamic parent {parent_feature}")
                             self.issue_count = self.issue_count + 1
 
                         #early feature cannot depend on a late feature unless none are selected or late is selected first
-                        if self.get_binding_time(self.parent_feature) == "Late" and self.get_binding_time(subObject['name']) == "Early":
-                            if self.get_is_selected(self.parent_feature) == False and self.get_is_selected(subObject['name']) == True:
-                                logger.info(f" *Early child feature {subObject['name']} cannot depends on late parent {self.parent_feature}, unless none are selected or the late is selected first")
+                        if not is_parameter and self.get_binding_time(parent_feature) == "Late" and self.get_binding_time(subObject['name']) == "Early":
+                            if self.get_is_selected(parent_feature) == False and self.get_is_selected(subObject['name']) == True:
+                                logger.info(f" *Early child feature {subObject['name']} cannot depends on late parent {parent_feature}, unless none are selected or the late is selected first")
                                 self.issue_count = self.issue_count + 1
 
                         #features that exclude each other cannot be select simultaneaosly
@@ -128,14 +138,11 @@ class Configurator:
                                 self.issue_count = self.issue_count + 1
 
                 #selected feature cannot depend on deselected one
-                if self.get_is_selected(self.parent_feature) == False and self.get_is_selected(subObject['name']) == True:
-                    logger.info(f" *Parent {self.parent_feature} is deselected but child {subObject['name']} is selected")
+                if self.get_is_selected(parent_feature) == False and self.get_is_selected(subObject['name']) == True:
+                    logger.info(f" *Parent {parent_feature} is deselected but child {subObject['name']} is selected")
                     self.issue_count = self.issue_count + 1
-                    self.parent_feature = ""
 
-                          
                 self.traverseModel(subObject)
-                       
 
     def checkRules(self):
         all_features = self.readFeatures()

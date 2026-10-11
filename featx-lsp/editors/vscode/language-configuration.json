@@ -1,0 +1,17 @@
+{
+  "brackets": [],
+  "autoClosingPairs": [],
+  "surroundingPairs": [],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(feature_model|feature_config)\\s*:.*$",
+    "decreaseIndentPattern": "^\\s+$"
+  },
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*(feature_model|feature_config)\\s*:.*$",
+      "action": {
+        "indent": "indent"
+      }
+    }
+  ]
+}

@@ -1,139 +1,179 @@
 {
-    "name":"root",
-    "sub":[
+    "name": "root",
+    "modelName": "RB-1-BASE",
+    "sub": [
         {
-            "name":"navigation",
-            "isOptional": false,
-            "includes":"",
-            "excludes":"",
+            "name": "navigation",
+            "type": "node",
+            "isOptional": true,
+            "grouping": "xor",
+            "includes": "",
+            "excludes": "",
             "bindingTimeAllowed": "Early",
             "bindingModeAllowed": "Static",
-            "sub":[
+            "sub": [
                 {
-                    "name":"to_loading",
+                    "name": "vel_max",
+                    "type": "double",
                     "isOptional": false,
-                    "includes":["square", "attach", "lift"],
-                    "excludes":"",
+                    "default": "1.6",
+                    "includes": "",
+                    "excludes": ""
+                },
+                {
+                    "name": "to_loading",
+                    "type": "node",
+                    "isOptional": false,
+                    "includes": [
+                        "square",
+                        "attach",
+                        "lift"
+                    ],
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 },
                 {
-                    "name":"to_delivery",
+                    "name": "to_delivery",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":["circular", "drop"],
-                    "excludes":"",
+                    "includes": [
+                        "circular",
+                        "drop"
+                    ],
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 },
                 {
-                    "name":"to_base",
+                    "name": "to_base",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 }
             ]
         },
         {
-            "name":"elevator",
-            "isOptional": false,
-            "includes":"",
-            "excludes":"",
+            "name": "elevator",
+            "type": "node",
+            "isOptional": true,
+            "grouping": "xor",
+            "includes": "",
+            "excludes": "",
             "bindingTimeAllowed": "Early",
             "bindingModeAllowed": "Static",
-            "sub":[
+            "sub": [
                 {
-                    "name":"lift",
+                    "name": "lift",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 },
                 {
-                    "name":"drop",
+                    "name": "drop",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 }
             ]
         },
         {
-            "name":"footprint",
-            "isOptional": false,
-            "includes":"",
-            "excludes":"",
+            "name": "footprint",
+            "type": "node",
+            "isOptional": true,
+            "grouping": "xor",
+            "includes": "",
+            "excludes": "",
             "bindingTimeAllowed": "Early",
             "bindingModeAllowed": "Static",
-            "sub":[
+            "sub": [
                 {
-                    "name":"circular",
+                    "name": "circular",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 },
                 {
-                    "name":"square",
+                    "name": "square",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
                 }
             ]
         },
         {
-            "name":"shelf",
-            "isOptional": false,
-            "includes":"",
-            "excludes":"",
+            "name": "shelf",
+            "type": "node",
+            "isOptional": true,
+            "includes": "",
+            "excludes": "",
             "bindingTimeAllowed": "Early",
             "bindingModeAllowed": "Static",
-            "sub":[
+            "sub": [
                 {
-                    "name":"attach",
-                    "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "name": "attach",
+                    "type": "node",
+                    "isOptional": true,
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Dynamic"
-                }]
+                }
+            ]
         },
         {
-            "name":"init_checks",
+            "name": "init_checks",
+            "type": "node",
             "isOptional": false,
-            "includes":["boot", "localization", "pose"],
-            "excludes":"",
+            "includes": [
+                "boot",
+                "pose"
+            ],
+            "excludes": "",
             "bindingTimeAllowed": "Late",
             "bindingModeAllowed": "Static"
         },
         {
-            "name":"localization",
+            "name": "localization",
+            "type": "node",
             "isOptional": false,
-            "includes":"",
-            "excludes":"",
+            "includes": "",
+            "excludes": "",
             "bindingTimeAllowed": "Late",
             "bindingModeAllowed": "Static",
-            "sub":[
+            "sub": [
                 {
-                    "name":"pose",
+                    "name": "pose",
+                    "type": "node",
                     "isOptional": false,
-                    "includes":"",
-                    "excludes":"",
+                    "includes": "",
+                    "excludes": "",
                     "bindingTimeAllowed": "Late",
                     "bindingModeAllowed": "Static"
-                }]
+                }
+            ]
         },
         {
-            "name":"boot",
+            "name": "boot",
+            "type": "node",
             "isOptional": false,
-            "includes":"",
-            "excludes":"",
+            "includes": "",
+            "excludes": "",
             "bindingTimeAllowed": "Late",
             "bindingModeAllowed": "Static"
         }
