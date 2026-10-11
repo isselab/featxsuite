@@ -172,6 +172,48 @@ var validatorNames = map[ValidatorKind]string{
 
 func (v ValidatorKind) String() string { return validatorNames[v] }
 
+// A range validator is described by which ends it constrains and whether each
+// one is excluded, rather than by listing the kinds it is not. Asking what a
+// validator is not meant that adding a kind silently fell into whichever
+// branch had not excluded it.
+
+// IsRange reports whether this validator constrains a numeric interval.
+func (v Validator) IsRange() bool {
+	switch v.Kind {
+	case ValidatorBounds, ValidatorGtEq, ValidatorGt, ValidatorLtEq, ValidatorLt:
+		return true
+	}
+	return false
+}
+
+// HasLower reports whether the validator constrains the low end.
+func (v Validator) HasLower() bool {
+	switch v.Kind {
+	case ValidatorBounds, ValidatorGtEq, ValidatorGt:
+		return true
+	}
+	return false
+}
+
+// HasUpper reports whether the validator constrains the high end.
+func (v Validator) HasUpper() bool {
+	switch v.Kind {
+	case ValidatorBounds, ValidatorLtEq, ValidatorLt:
+		return true
+	}
+	return false
+}
+
+// LowerExcludes reports whether a value equal to the lower bound is rejected.
+func (v Validator) LowerExcludes() bool {
+	return v.Kind == ValidatorGt || (v.Kind == ValidatorBounds && v.LowerExclusive)
+}
+
+// UpperExcludes reports whether a value equal to the upper bound is rejected.
+func (v Validator) UpperExcludes() bool {
+	return v.Kind == ValidatorLt || (v.Kind == ValidatorBounds && v.UpperExclusive)
+}
+
 // Validator is a parameter's value constraint, with its arguments kept
 // verbatim so that the generator and the formatter both reproduce them.
 type Validator struct {

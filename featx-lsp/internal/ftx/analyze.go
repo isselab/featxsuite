@@ -216,7 +216,7 @@ func checkValidator(ft *Feature) []Diagnostic {
 			add("the value has %d element(s) but %q requires %d", len(ft.DefaultValues), v.Kind, want)
 		}
 
-	case ValidatorBounds, ValidatorGtEq, ValidatorLtEq:
+	case ValidatorBounds, ValidatorGtEq, ValidatorGt, ValidatorLtEq, ValidatorLt:
 		if !ft.Type.IsNumeric() {
 			add("a range needs a numeric type, and %q is a %s", ft.Name, ft.Type)
 			return out
@@ -263,29 +263,39 @@ func checkValueAgainstValidator(ft *Feature) []Diagnostic {
 		}}
 	}
 
-	switch v.Kind {
-	case ValidatorBounds, ValidatorGtEq, ValidatorLtEq:
+	switch {
+	case v.IsRange():
 		for _, lit := range ft.DefaultValues {
 			got, err := strconv.ParseFloat(lit, 64)
 			if err != nil {
 				continue // already reported as ill-typed
 			}
 
-			if v.Kind != ValidatorLtEq {
-				if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil && got < lo {
-					return bad("the value %s is below the permitted minimum %s", lit, v.Args[0])
+			if v.HasLower() {
+				if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil {
+					if got < lo {
+						return bad("the value %s is below the permitted minimum %s", lit, v.Args[0])
+					}
+					if got == lo && v.LowerExcludes() {
+						return bad("the value %s equals the excluded minimum %s", lit, v.Args[0])
+					}
 				}
 			}
 
-			hi := v.Args[len(v.Args)-1]
-			if v.Kind != ValidatorGtEq {
-				if limit, err := strconv.ParseFloat(hi, 64); err == nil && got > limit {
-					return bad("the value %s is above the permitted maximum %s", lit, hi)
+			if v.HasUpper() {
+				hi := v.Args[len(v.Args)-1]
+				if limit, err := strconv.ParseFloat(hi, 64); err == nil {
+					if got > limit {
+						return bad("the value %s is above the permitted maximum %s", lit, hi)
+					}
+					if got == limit && v.UpperExcludes() {
+						return bad("the value %s equals the excluded maximum %s", lit, hi)
+					}
 				}
 			}
 		}
 
-	case ValidatorOneOf:
+	case v.Kind == ValidatorOneOf:
 		for _, lit := range ft.DefaultValues {
 			var found bool
 			for _, arg := range v.Args {
