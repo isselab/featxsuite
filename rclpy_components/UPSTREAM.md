@@ -77,10 +77,10 @@ Code: <your branch URL>
 
 ## Checklist before the PR
 
-- [ ] Apache-2.0 header on every source file (`ament_copyright` enforces it)
-- [ ] `test_copyright.py`, `test_flake8.py`, `test_pep257.py`
-- [ ] `ament_flake8` and `ament_pep257` clean
-- [ ] Real name and contact in `package.xml` as maintainer
+- [x] Apache-2.0 header on every source file (`ament_copyright` enforces it)
+- [x] `test_copyright.py`, `test_flake8.py`, `test_pep257.py`
+- [x] `ament_flake8` and `ament_pep257` clean
+- [x] Real name and contact in `package.xml` as maintainer
 - [ ] Decide the registration mechanism from the answer to the question above
 - [ ] Companion change to `ros2/ros2cli` so `ros2component` searches both groups
 - [ ] Drop `examples.py`, or move it to a test fixture — it exists for the tests
