@@ -259,7 +259,8 @@ xor navigation : node {static early} ?       a node: you write code for this
 ```
 
 A feature typed `node` is a ROS node. It has bindings, it is something you
-write, and it is what `featx load` binds.
+write, and it is what `featx load` binds. It carries no validator: a validator
+constrains a value, and a node is bound rather than valued.
 
 Every other type — `bool`, `int`, `double`, `string` and the four array types —
 declares a **ROS parameter** of the node that encloses it. There is no class to

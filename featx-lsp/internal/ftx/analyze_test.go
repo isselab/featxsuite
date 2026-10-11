@@ -300,3 +300,47 @@ func TestAnalyzeEnumerationOverArrayElementsIsNotSized(t *testing.T) {
 		}
 	}
 }
+
+// A validator constrains a value, and only a parameter has one. A node is
+// bound, not valued, so it carries bindings and children instead.
+func TestAnalyzeValidatorOnlyOnAParameter(t *testing.T) {
+	want := "a node cannot carry a validator; only a parameter constrains its own value"
+
+	for _, src := range []string{
+		// Written behind the node's own bindings.
+		"RB-1-BASE:\n    demo : node {dynamic late} bounds<0.0, 3.0>\n",
+		"RB-1-BASE:\n    demo : node {dynamic late} gt<0.0>\n",
+		"RB-1-BASE:\n    demo : node {dynamic late} one_of<a, b>\n",
+		"RB-1-BASE:\n    demo : node {dynamic late} not_empty<>\n",
+		// Or on its own line beneath it, where a child or a constraint goes.
+		"RB-1-BASE:\n    demo : node {dynamic late}\n        bounds<0.0, 3.0>\n",
+	} {
+		f := Parse(src)
+		got := append(f.Diagnostics, Analyze(f)...)
+
+		if !hasMessage(got, want) {
+			t.Errorf("%q: missing %q; got %v", src, want, messages(got))
+		}
+	}
+}
+
+// A configuration selects features; what a parameter may hold is the model's
+// to say. One misplaced validator is one mistake and gets one message.
+func TestAnalyzeValidatorNotInAConfiguration(t *testing.T) {
+	f := Parse("nav *{static early}\np * bounds<0.0, 3.0>\n")
+
+	want := "a validator belongs on the parameter in the feature model, not in a configuration"
+	if !hasMessage(f.Diagnostics, want) {
+		t.Fatalf("missing %q; got %v", want, messages(f.Diagnostics))
+	}
+
+	var errs int
+	for _, d := range f.Diagnostics {
+		if d.Severity == SeverityError {
+			errs++
+		}
+	}
+	if errs != 1 {
+		t.Errorf("%d errors for one misplaced validator; want 1: %v", errs, messages(f.Diagnostics))
+	}
+}

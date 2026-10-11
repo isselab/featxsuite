@@ -330,9 +330,15 @@ hover reports. Giving a node a value, or a parameter children, is an error.
 
 ### Validators
 
-A parameter may constrain its own value. Each validator is written by the name
-`generate_parameter_library` gives it, with its arguments after it, so the
-model and the generated schema use the same word:
+A validator constrains a value, so it can only be written on a **parameter**. A
+node is bound rather than valued — it carries bindings, children and
+constraints instead — and the root is only the model's name, so neither takes
+one. Nor does a configuration: which values a parameter may hold is the model's
+to state, and a configuration only selects features.
+
+Each validator is written by the name `generate_parameter_library` gives it,
+with its arguments after it, so the model and the generated schema use the same
+word:
 
 | Written | Generated | Meaning |
 |---|---|---|

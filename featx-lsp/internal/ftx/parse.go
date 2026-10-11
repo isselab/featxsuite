@@ -287,6 +287,18 @@ func (f *File) parseConfigEntry(ln, indent int, toks []token) *Feature {
 				"a validator belongs on the parameter in the feature model, not in a configuration")
 			i = f.retiredValidator(ln, ft, toks, i)
 		default:
+			// A validator written here is one mistake, so it gets one
+			// message. Falling through to the general case reported the name
+			// as unexpected and then its brackets as a misplaced validator,
+			// which named the problem only on the second line.
+			if startsValidator(toks, i) {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"a validator belongs on the parameter in the feature model, "+
+						"not in a configuration")
+				i = f.skipBrackets(toks, i+1)
+				continue
+			}
+
 			f.diag(SeverityError, rangeOf(ln, toks[i]),
 				"unexpected %q after %q; a binding goes in %q and a value in %q",
 				toks[i].text, ft.Name, "{}", "()")
@@ -549,6 +561,17 @@ func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
 		EndChar:   inner[len(inner)-1].col + utf16Len(inner[len(inner)-1].text),
 	}
 
+	return i
+}
+
+// skipBrackets advances past a bracketed group starting at toks[i], so that
+// one mistake does not produce a second diagnostic for its contents.
+func (f *File) skipBrackets(toks []token, i int) int {
+	for ; i < len(toks); i++ {
+		if toks[i].text == ">" {
+			return i + 1
+		}
+	}
 	return i
 }
 
