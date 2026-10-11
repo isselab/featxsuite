@@ -1,5 +1,7 @@
 navigation *{static early}
+vel_min *
 vel_max *
+navigation_mode *
 to_loading * {dynamic late}
 to_delivery {dynamic late}
 to_base {dynamic late}

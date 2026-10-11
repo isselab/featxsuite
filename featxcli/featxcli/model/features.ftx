@@ -3,7 +3,7 @@ RB-1-BASE:
         navigation_mode : string ("autonomous") 
             one_of<"autonomous", "manual">
         vel_min : double (0.5) 
-            bounds<0.0, 0.5>
+            lt_eq<1>
         vel_max : double (1.6) 
             bounds<1.5, 3.0>
         to_loading : node {dynamic late}
