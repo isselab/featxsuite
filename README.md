@@ -77,13 +77,14 @@ rosdep install --from-paths src --ignore-src -y
 
 ## Workspace layout
 
-Two repositories, side by side under `src/`:
+Three repositories, side by side under `src/`:
 
 ```
 ~/ros2_ws/
 └── src/
-    ├── featx_suite/      this repository: the tool
-    └── packages/         the feature implementations
+    ├── featx_suite/        this repository: the tool
+    ├── rclpy_components/   the container that binds Python features
+    └── packages/           the feature implementations
 ```
 
 `featx_suite` is the tool. `packages` holds the features themselves — one ROS
@@ -92,8 +93,44 @@ the features beneath it. The two are separate because the tool is not tied to
 any particular robot: point it at a different `packages` and it configures that
 instead.
 
-The commands below assume `~/ros2_ws`. Any path works, as long as both
+`rclpy_components` is separate for a different reason: nothing in it depends on
+FeatX. It supplies for rclpy what `rclcpp_components` supplies for rclcpp, and
+is offered to ROS 2 under [rclpy issue
+575](https://github.com/ros2/rclpy/issues/575), so it is kept where it can be
+used without this project.
+
+The commands below assume `~/ros2_ws`. Any path works, as long as the
 repositories sit under the same `src/`.
+
+## Getting the sources
+
+```bash
+sudo apt install python3-vcstool
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws
+git clone git@github.com:isselab/featxsuite.git src/featx_suite
+vcs import src < src/featx_suite/featx.repos
+```
+
+That last command reads `featx.repos` and clones `rclpy_components` beside this
+repository. Do not skip it, and note that nothing will tell you if you do:
+colcon only uses a declared dependency to order the build, so the workspace
+compiles perfectly well without that package and says nothing. What fails is
+later and further away — `ros2 featx start_config` cannot start the Python
+container, with
+
+```
+PackageNotFoundError: package 'rclpy_components' not found
+```
+
+and no feature implemented in Python can be bound at all.
+
+`featx.repos` deliberately does not list `featx_suite` itself. Importing the
+repository the file lives in would check out whatever branch is named there over
+whatever you are working on, and discard anything staged.
+
+It does not list `packages` either, since the tool is not tied to any
+particular set of features. Clone whichever one you are configuring into
+`src/` — the examples throughout this guide use the warehouse features.
 
 ## Build
 
