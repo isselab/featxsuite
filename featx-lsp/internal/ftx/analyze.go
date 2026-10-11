@@ -2,6 +2,7 @@ package ftx
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,51 +182,60 @@ func checkLiteral(t Type, lit string) error {
 
 // checkValidator reports a validator that cannot apply to the type it was
 // written on, or whose arguments do not read as that type.
+//
+// What each validator accepts comes from its own description rather than from a
+// list of kinds kept here, so a validator added to that table is checked
+// without this function being touched.
 func checkValidator(ft *Feature) []Diagnostic {
-	v := ft.Validator
-	if v.Kind == ValidatorNone {
+	if len(ft.Validators) == 0 {
 		return nil
 	}
 
 	var out []Diagnostic
 
-	add := func(format string, args ...any) {
-		out = append(out, Diagnostic{
-			Range:    v.Range,
-			Severity: SeverityError,
-			Message:  fmt.Sprintf(format, args...),
-		})
-	}
-
 	if !ft.Type.IsValue() {
-		add("a %s cannot carry a validator; only a parameter constrains its own value", ft.Type)
-		return out
+		return []Diagnostic{{
+			Range:    ft.Validators[0].Range,
+			Severity: SeverityError,
+			Message: fmt.Sprintf(
+				"a %s cannot carry a validator; only a parameter constrains its own value",
+				ft.Type),
+		}}
 	}
 
-	switch v.Kind {
-	case ValidatorFixedSize:
-		if !ft.Type.IsArray() {
-			add("%q fixes an array's length, and %q is a %s", "<n>", ft.Name, ft.Type)
-			return out
-		}
-		if _, err := strconv.ParseInt(v.Args[0], 10, 64); err != nil {
-			add("%q is not a whole number of elements", v.Args[0])
-			return out
-		}
-		if want, _ := strconv.Atoi(v.Args[0]); ft.HasDefault && len(ft.DefaultValues) != want {
-			add("the value has %d element(s) but %q requires %d", len(ft.DefaultValues), v.Kind, want)
+	for _, v := range ft.Validators {
+		spec := v.Kind.Spec()
+
+		add := func(format string, args ...any) {
+			out = append(out, Diagnostic{
+				Range:    v.Range,
+				Severity: SeverityError,
+				Message:  fmt.Sprintf(format, args...),
+			})
 		}
 
-	case ValidatorBounds, ValidatorGtEq, ValidatorLtEq:
-		if !ft.Type.IsNumeric() {
-			add("a range needs a numeric type, and %q is a %s", ft.Name, ft.Type)
-			return out
+		if !spec.Domain.Accepts(ft.Type) {
+			add("%s needs %s, and %q is a %s", spec.Written(), spec.Domain, ft.Name, ft.Type)
+			continue
 		}
-		for _, arg := range v.Args {
-			if err := checkLiteral(ft.Type.Element(), arg); err != nil {
-				add("%s", err)
+
+		// A count is a number of elements or characters whatever the
+		// parameter holds, so it is checked as a whole number rather than
+		// against the parameter's own type.
+		if spec.Counts {
+			for _, arg := range v.Args {
+				if _, err := strconv.ParseInt(arg, 10, 64); err != nil {
+					add("%q is not a whole number", arg)
+				}
+			}
+		} else {
+			for _, arg := range v.Args {
+				if err := checkLiteral(ft.Type.Element(), arg); err != nil {
+					add("%s", err)
+				}
 			}
 		}
+
 		if v.Kind == ValidatorBounds && len(v.Args) == 2 {
 			lo, loErr := strconv.ParseFloat(v.Args[0], 64)
 			hi, hiErr := strconv.ParseFloat(v.Args[1], 64)
@@ -234,73 +244,386 @@ func checkValidator(ft *Feature) []Diagnostic {
 			}
 		}
 
-	case ValidatorOneOf:
-		for _, arg := range v.Args {
-			if err := checkLiteral(ft.Type.Element(), arg); err != nil {
-				add("%s", err)
+		if v.Kind == ValidatorFixedSize && len(v.Args) == 1 {
+			if want, err := strconv.Atoi(v.Args[0]); err == nil && ft.HasDefault && ft.Type.IsArray() {
+				if len(ft.DefaultValues) != want {
+					add("the value has %d element(s) but %s requires %d",
+						len(ft.DefaultValues), spec.Written(), want)
+				}
 			}
 		}
 	}
 
+	out = append(out, checkValidatorsTogether(ft)...)
 	out = append(out, checkValueAgainstValidator(ft)...)
 	return out
+}
+
+// checkValidatorsTogether reports validators that cannot all hold at once, or
+// that say the same thing twice over, so a parameter no value can satisfy is
+// caught before a node refuses every value it is given.
+func checkValidatorsTogether(ft *Feature) []Diagnostic {
+	out := checkBoundsIsAlone(ft)
+	out = append(out, checkEnumerationIsAlone(ft)...)
+	out = append(out, checkRangeIsSatisfiable(ft)...)
+	return append(out, checkEnumerationIsSatisfiable(ft)...)
+}
+
+// checkEnumerationIsAlone reports a size validator written beside one_of.
+//
+// An enumeration says exactly which values are permitted, so their lengths
+// follow from it. A length constraint beside one either excludes none of them,
+// in which case it says nothing, or excludes some, in which case the
+// enumeration that was written is not the one that holds. Writing the
+// enumeration you mean says it once.
+func checkEnumerationIsAlone(ft *Feature) []Diagnostic {
+	var enumerated bool
+	for _, v := range ft.Validators {
+		if v.Kind == ValidatorOneOf {
+			enumerated = true
+		}
+	}
+
+	if !enumerated {
+		return nil
+	}
+
+	var out []Diagnostic
+
+	for _, v := range ft.Validators {
+		if !v.Kind.Spec().Counts && v.Kind != ValidatorNotEmpty {
+			continue
+		}
+
+		out = append(out, Diagnostic{
+			Range:    v.Range,
+			Severity: SeverityError,
+			Message: fmt.Sprintf(
+				"%s cannot be written beside %s, which already says which values are "+
+					"permitted and so what lengths they have; write the enumeration you mean",
+				v.Kind.Spec().Written(), ValidatorOneOf.Spec().Written()),
+		})
+	}
+
+	return out
+}
+
+// checkEnumerationIsSatisfiable reports an enumeration none of whose values
+// pass the other validators.
+//
+// A default outside the enumeration is already reported, but a parameter can
+// be worse off than that: when nothing it permits is acceptable, no default
+// would have helped, and the fault is in the validators rather than the value.
+func checkEnumerationIsSatisfiable(ft *Feature) []Diagnostic {
+	var enum *Validator
+	var others []Validator
+
+	for i, v := range ft.Validators {
+		switch {
+		case v.Kind == ValidatorOneOf:
+			enum = &ft.Validators[i]
+		case v.Kind.IsRange() || v.Kind.Spec().Counts || v.Kind == ValidatorNotEmpty:
+			others = append(others, v)
+		}
+	}
+
+	if enum == nil || len(others) == 0 || len(enum.Args) == 0 {
+		return nil
+	}
+
+	for _, candidate := range enum.Args {
+		if satisfiesAll(ft, candidate, others) {
+			return nil
+		}
+	}
+
+	return []Diagnostic{{
+		Range:    enum.Range,
+		Severity: SeverityError,
+		Message: fmt.Sprintf("no value %s permits satisfies the other validators, so nothing is acceptable",
+			ValidatorOneOf.Spec().Written()),
+	}}
+}
+
+// satisfiesAll reports whether one literal passes every given validator.
+func satisfiesAll(ft *Feature, literal string, vs []Validator) bool {
+	for _, v := range vs {
+		if !satisfies(ft, literal, v) {
+			return false
+		}
+	}
+	return true
+}
+
+// satisfies reports whether one literal passes one validator. A literal that
+// cannot be read as the validator's subject is treated as passing, since being
+// ill-typed is reported on its own.
+func satisfies(ft *Feature, literal string, v Validator) bool {
+	if v.Kind.IsRange() {
+		got, err := strconv.ParseFloat(literal, 64)
+		if err != nil {
+			return true
+		}
+
+		if v.Kind.HasLower() {
+			if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil {
+				if got < lo || (got == lo && v.Kind.LowerExcludes()) {
+					return false
+				}
+			}
+		}
+
+		if v.Kind.HasUpper() {
+			hi := v.Args[len(v.Args)-1]
+			if limit, err := strconv.ParseFloat(hi, 64); err == nil {
+				if got > limit || (got == limit && v.Kind.UpperExcludes()) {
+					return false
+				}
+			}
+		}
+
+		return true
+	}
+
+	length := len([]rune(unquote(literal)))
+	if ft.Type.IsArray() {
+		// An enumerated value is one element, so an array's length is not
+		// something an entry in the enumeration can decide.
+		return true
+	}
+
+	switch v.Kind {
+	case ValidatorNotEmpty:
+		return length > 0
+	case ValidatorFixedSize, ValidatorSizeGt, ValidatorSizeLt:
+		want, err := strconv.Atoi(v.Args[0])
+		if err != nil {
+			return true
+		}
+		switch v.Kind {
+		case ValidatorFixedSize:
+			return length == want
+		case ValidatorSizeGt:
+			return length > want
+		default:
+			return length < want
+		}
+	}
+
+	return true
+}
+
+// checkBoundsIsAlone reports a comparison or an enumeration written beside
+// bounds.
+//
+// bounds gives both ends at once, so anything else that constrains the value
+// is either repeating one of them or disagreeing with it, and the model would
+// state the same limit in two places. A range open at one end is written as
+// the pair it is — gt with lt — rather than as bounds with a correction.
+func checkBoundsIsAlone(ft *Feature) []Diagnostic {
+	var hasBounds bool
+	for _, v := range ft.Validators {
+		if v.Kind == ValidatorBounds {
+			hasBounds = true
+		}
+	}
+
+	if !hasBounds {
+		return nil
+	}
+
+	var out []Diagnostic
+
+	for _, v := range ft.Validators {
+		var message string
+
+		switch v.Kind {
+		case ValidatorGt, ValidatorGtEq, ValidatorLt, ValidatorLtEq:
+			message = fmt.Sprintf(
+				"%s cannot be written beside %s, which already gives both ends; "+
+					"keep %s alone, or replace it with %s and %s",
+				v.Kind.Spec().Written(), ValidatorBounds.Spec().Written(),
+				ValidatorBounds.Spec().Written(),
+				ValidatorGt.Spec().Written(), ValidatorLt.Spec().Written())
+
+		case ValidatorOneOf:
+			message = fmt.Sprintf(
+				"%s cannot be written beside %s; an enumeration already says which "+
+					"values are permitted, so a range beside it either repeats it or "+
+					"rules some of them out",
+				v.Kind.Spec().Written(), ValidatorBounds.Spec().Written())
+
+		default:
+			continue
+		}
+
+		out = append(out, Diagnostic{
+			Range:    v.Range,
+			Severity: SeverityError,
+			Message:  message,
+		})
+	}
+
+	return out
+}
+
+// checkRangeIsSatisfiable reports bounds that no value can meet at once.
+func checkRangeIsSatisfiable(ft *Feature) []Diagnostic {
+	lower, upper := math.Inf(-1), math.Inf(1)
+	var lowerText, upperText string
+	var where Range
+	var found bool
+
+	for _, v := range ft.Validators {
+		if len(v.Args) == 0 {
+			continue
+		}
+
+		if v.Kind == ValidatorSizeGt || v.Kind.HasLower() {
+			if n, err := strconv.ParseFloat(v.Args[0], 64); err == nil && n > lower {
+				lower, lowerText, where, found = n, v.Args[0], v.Range, true
+			}
+		}
+
+		if v.Kind == ValidatorSizeLt || v.Kind.HasUpper() {
+			arg := v.Args[len(v.Args)-1]
+			if n, err := strconv.ParseFloat(arg, 64); err == nil && n < upper {
+				upper, upperText, where, found = n, arg, v.Range, true
+			}
+		}
+	}
+
+	if found && lowerText != "" && upperText != "" && lower >= upper {
+		return []Diagnostic{{
+			Range:    where,
+			Severity: SeverityError,
+			Message: fmt.Sprintf("nothing satisfies both: a lower bound of %s and an upper bound of %s",
+				lowerText, upperText),
+		}}
+	}
+
+	return nil
 }
 
 // checkValueAgainstValidator reports a default that its own validator rejects,
 // which generate_parameter_library would only discover at startup.
 func checkValueAgainstValidator(ft *Feature) []Diagnostic {
-	v := ft.Validator
-
 	if !ft.HasDefault || len(ft.DefaultValues) == 0 {
 		return nil
 	}
 
-	bad := func(format string, args ...any) []Diagnostic {
+	bad := func(r Range, format string, args ...any) []Diagnostic {
 		return []Diagnostic{{
-			Range:    ft.DefaultRange,
+			Range:    r,
 			Severity: SeverityError,
 			Message:  fmt.Sprintf(format, args...),
 		}}
 	}
 
-	switch v.Kind {
-	case ValidatorBounds, ValidatorGtEq, ValidatorLtEq:
-		for _, lit := range ft.DefaultValues {
-			got, err := strconv.ParseFloat(lit, 64)
+	for _, v := range ft.Validators {
+		switch {
+		case v.Kind.IsRange():
+			for _, lit := range ft.DefaultValues {
+				got, err := strconv.ParseFloat(lit, 64)
+				if err != nil {
+					continue // already reported as ill-typed
+				}
+
+				if v.Kind.HasLower() {
+					if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil {
+						if got < lo {
+							return bad(ft.DefaultRange,
+								"the value %s is below the permitted minimum %s", lit, v.Args[0])
+						}
+						if got == lo && v.Kind.LowerExcludes() {
+							return bad(ft.DefaultRange,
+								"the value %s equals the excluded minimum %s", lit, v.Args[0])
+						}
+					}
+				}
+
+				if v.Kind.HasUpper() {
+					hi := v.Args[len(v.Args)-1]
+					if limit, err := strconv.ParseFloat(hi, 64); err == nil {
+						if got > limit {
+							return bad(ft.DefaultRange,
+								"the value %s is above the permitted maximum %s", lit, hi)
+						}
+						if got == limit && v.Kind.UpperExcludes() {
+							return bad(ft.DefaultRange,
+								"the value %s equals the excluded maximum %s", lit, hi)
+						}
+					}
+				}
+			}
+
+		case v.Kind == ValidatorOneOf:
+			for _, lit := range ft.DefaultValues {
+				var found bool
+				for _, arg := range v.Args {
+					if arg == lit || unquote(arg) == unquote(lit) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return bad(ft.DefaultRange,
+						"the value %s is not one of %s", lit, strings.Join(v.Args, ", "))
+				}
+			}
+
+		case v.Kind == ValidatorNotEmpty:
+			if n := defaultLength(ft); n == 0 {
+				return bad(ft.DefaultRange, "the value is empty, and %s rejects that",
+					v.Kind.Spec().Written())
+			}
+
+		case v.Kind == ValidatorSizeGt, v.Kind == ValidatorSizeLt, v.Kind == ValidatorFixedSize:
+			want, err := strconv.Atoi(v.Args[0])
 			if err != nil {
-				continue // already reported as ill-typed
+				continue // already reported
 			}
+			got := defaultLength(ft)
 
-			if v.Kind != ValidatorLtEq {
-				if lo, err := strconv.ParseFloat(v.Args[0], 64); err == nil && got < lo {
-					return bad("the value %s is below the permitted minimum %s", lit, v.Args[0])
-				}
-			}
-
-			hi := v.Args[len(v.Args)-1]
-			if v.Kind != ValidatorGtEq {
-				if limit, err := strconv.ParseFloat(hi, 64); err == nil && got > limit {
-					return bad("the value %s is above the permitted maximum %s", lit, hi)
-				}
-			}
-		}
-
-	case ValidatorOneOf:
-		for _, lit := range ft.DefaultValues {
-			var found bool
-			for _, arg := range v.Args {
-				if arg == lit {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return bad("the value %s is not one of %s", lit, strings.Join(v.Args, ", "))
+			switch {
+			case v.Kind == ValidatorSizeGt && got <= want:
+				return bad(ft.DefaultRange, "the value's length is %d, and %s requires more than %d",
+					got, v.Kind.Spec().Written(), want)
+			case v.Kind == ValidatorSizeLt && got >= want:
+				return bad(ft.DefaultRange, "the value's length is %d, and %s requires fewer than %d",
+					got, v.Kind.Spec().Written(), want)
+			case v.Kind == ValidatorFixedSize && ft.Type == TypeString && got != want:
+				return bad(ft.DefaultRange, "the value's length is %d but %s requires %d",
+					got, v.Kind.Spec().Written(), want)
 			}
 		}
 	}
 
 	return nil
+}
+
+// defaultLength is what a size validator counts: the characters of a string,
+// or the elements of an array.
+func defaultLength(ft *Feature) int {
+	if ft.Type == TypeString {
+		if len(ft.DefaultValues) == 0 {
+			return 0
+		}
+		return len([]rune(unquote(ft.DefaultValues[0])))
+	}
+	return len(ft.DefaultValues)
+}
+
+// unquote removes one matching pair of surrounding quotes, so that a value
+// written with them compares equal to the same value written without.
+func unquote(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+	if first, last := s[0], s[len(s)-1]; first == last && (first == '"' || first == '\'') {
+		return s[1 : len(s)-1]
+	}
+	return s
 }
 
 // checkConstraints validates the bracketed lines against the model that
@@ -498,7 +821,7 @@ func CrossCheck(cfg, model *File) []Diagnostic {
 			// the one the model gave the parameter, validator included.
 			typed := *entry
 			typed.Type = declared.Type
-			typed.Validator = declared.Validator
+			typed.Validators = declared.Validators
 
 			out = append(out, checkValue(&typed)...)
 			out = append(out, checkValueAgainstValidator(&typed)...)

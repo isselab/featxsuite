@@ -9,14 +9,14 @@ import (
 
 const paramModel = `RB-1-BASE:
     nav : node {dynamic late}
-        vel_max : double (1.5) <0.0, 3.0>
-        vel_min : double (1.0) <0.0, #>
-        tolerance : double (-0.01) <#, 0.0>
-        mode_pick : double (7.0) <<0.0, 3.0, 7.0>>
-        offsets : double_array (0.0, 0.0, 0.0, 0.0) <4>
+        vel_max : double (1.5) bounds<0.0, 3.0>
+        vel_min : double (1.0) gt_eq<0.0>
+        tolerance : double (-0.01) lt_eq<0.0>
+        mode_pick : double (7.0) one_of<0.0, 3.0, 7.0>
+        offsets : double_array (0.0, 0.0, 0.0, 0.0) fixed_size<4>
         retries : int (3)
         verbose : bool (true)
-        label : string (fast) <<slow, fast>>
+        label : string (fast) one_of<slow, fast>
     base : node {static early}
         timeout : double (0.5)
     plain : node {static early}
@@ -106,11 +106,25 @@ func TestParamsTypesAndValues(t *testing.T) {
 func TestParamsReadOnlyFollowsBindingMode(t *testing.T) {
 	got := render(t, paramModel)
 
-	if strings.Contains(got["nav"], "read_only") {
+	if !strings.Contains(got["nav"], "read_only: false") {
 		t.Errorf("a dynamic node's parameters must stay reconfigurable:\n%s", got["nav"])
 	}
 	if !strings.Contains(got["base"], "read_only: true") {
 		t.Errorf("a static node's parameters must be read-only:\n%s", got["base"])
+	}
+}
+
+// Both values are written out. Leaving the false case to the generator's
+// default would make a specification silent about something the model states.
+func TestParamsReadOnlyIsAlwaysStated(t *testing.T) {
+	for node, spec := range render(t, paramModel) {
+		params := strings.Count(spec, "\n    type: ")
+		stated := strings.Count(spec, "\n    read_only: ")
+
+		if params != stated {
+			t.Errorf("%s: %d parameter(s) but %d read_only line(s):\n%s",
+				node, params, stated, spec)
+		}
 	}
 }
 
@@ -161,7 +175,7 @@ func keys(m map[string]string) []string {
 // nodes that run, so they are the ones that need it.
 const groupedModel = `RB-1-BASE:
     xor navigation : node {static early} ?
-        vel_max : double (1.6) <0.0, 3.0>
+        vel_max : double (1.6) bounds<0.0, 3.0>
         to_loading : node {dynamic late}
         to_delivery : node {dynamic late}
     shelf : node {static early} ?
@@ -217,8 +231,8 @@ func TestParamsPlainNodeKeepsItsOwnParameters(t *testing.T) {
 func TestParamsReadOnlyFollowsTheReceivingNode(t *testing.T) {
 	got := render(t, groupedModel)
 
-	if strings.Contains(got["to_loading"], "read_only") {
-		t.Errorf("a dynamically bound alternative was marked read_only:\n%s", got["to_loading"])
+	if !strings.Contains(got["to_loading"], "read_only: false") {
+		t.Errorf("a dynamically bound alternative was not left reconfigurable:\n%s", got["to_loading"])
 	}
 	if !strings.Contains(got["shelf"], "read_only: true") {
 		t.Errorf("a statically bound node was not marked read_only:\n%s", got["shelf"])
@@ -262,4 +276,105 @@ func TestParamsGroupingWithNoAlternativesKeepsItsParameters(t *testing.T) {
 	if !strings.Contains(spec, "stray:") {
 		t.Errorf("parameter went missing:\n%s", spec)
 	}
+}
+
+// exclusiveModel exercises every combination of open and closed ends.
+const exclusiveModel = `RB-1-BASE:
+    demo : node {dynamic late}
+        at_least : double (1.0) gt_eq<0.0>
+        more_than : double (1.0) gt<0.0>
+        at_most : double (1.0) lt_eq<3.0>
+        less_than : double (1.0) lt<3.0>
+        closed : double (1.5) bounds<0.0, 3.0>
+        open : double (1.5) gt<0.0> lt<3.0>
+        half_lo : double (1.5) gt<0.0> lt_eq<3.0>
+        half_hi : double (1.5) gt_eq<0.0> lt<3.0>
+`
+
+func TestParamsExclusiveBoundsUseTheStrictValidators(t *testing.T) {
+	spec := render(t, exclusiveModel)["demo"]
+
+	for _, want := range []string{
+		"gt_eq<>: [0.0]", // at_least
+		"gt<>: [0.0]",    // more_than
+		"lt_eq<>: [3.0]", // at_most
+		"lt<>: [3.0]",    // less_than
+	} {
+		if !strings.Contains(spec, want) {
+			t.Errorf("spec lacks %q:\n%s", want, spec)
+		}
+	}
+}
+
+// bounds<> includes both of its ends, so a range with an excluded end has no
+// single-validator form. The library applies a list in turn, which is the same
+// constraint expressed as two.
+func TestParamsAnExcludedEndSplitsTheRange(t *testing.T) {
+	spec := render(t, exclusiveModel)["demo"]
+
+	cases := map[string][]string{
+		"open":    {"gt<>: [0.0]", "lt<>: [3.0]"},
+		"half_lo": {"gt<>: [0.0]", "lt_eq<>: [3.0]"},
+		"half_hi": {"gt_eq<>: [0.0]", "lt<>: [3.0]"},
+	}
+
+	for name, wants := range cases {
+		section := paramSection(spec, name)
+		for _, want := range wants {
+			if !strings.Contains(section, want) {
+				t.Errorf("%s lacks %q:\n%s", name, want, section)
+			}
+		}
+		if strings.Contains(section, "bounds<>") {
+			t.Errorf("%s used bounds<>, which includes its ends:\n%s", name, section)
+		}
+	}
+}
+
+// A closed range stays one validator, so nothing already written changes.
+func TestParamsClosedRangeStillUsesBounds(t *testing.T) {
+	section := paramSection(render(t, exclusiveModel)["demo"], "closed")
+
+	if !strings.Contains(section, "bounds<>: [0.0, 3.0]") {
+		t.Errorf("a closed range no longer emits bounds<>:\n%s", section)
+	}
+	for _, unwanted := range []string{"gt", "lt"} {
+		if strings.Contains(section, unwanted+"<>") {
+			t.Errorf("a closed range emitted %s<>:\n%s", unwanted, section)
+		}
+	}
+}
+
+// A string default may be written with or without quotes and means the same
+// thing; quoting it twice would put the quotes in the generated default.
+func TestParamsStringDefaultIsQuotedOnce(t *testing.T) {
+	got := render(t, `RB-1-BASE:
+    demo : node {dynamic late}
+        bare : string (autonomous)
+        quoted : string ("autonomous")
+`)["demo"]
+
+	if strings.Contains(got, `\"`) {
+		t.Errorf("a quoted default was escaped rather than read as quoted:\n%s", got)
+	}
+	if strings.Count(got, `default_value: "autonomous"`) != 2 {
+		t.Errorf("the two spellings disagree:\n%s", got)
+	}
+}
+
+// paramSection returns just one parameter's block from a spec.
+func paramSection(spec, name string) string {
+	start := strings.Index(spec, "\n  "+name+":\n")
+	if start < 0 {
+		return ""
+	}
+	rest := spec[start+1:]
+
+	// The next parameter starts at the next two-space-indented key.
+	for i := 1; i < len(rest)-3; i++ {
+		if rest[i] == '\n' && rest[i+1] == ' ' && rest[i+2] == ' ' && rest[i+3] != ' ' {
+			return rest[:i]
+		}
+	}
+	return rest
 }

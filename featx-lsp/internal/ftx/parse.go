@@ -1,6 +1,7 @@
 package ftx
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -51,6 +52,13 @@ func Parse(src string) *File {
 
 		isConstraintLine := toks[0].text == "!" || toks[0].text == "["
 
+		// A validator may sit on its own line beneath the parameter it
+		// constrains, the way a constraint sits beneath its feature. A
+		// parameter has no children, so an indented line under one is never
+		// anything else, and a parameter carrying several validators reads
+		// better one per line than strung along behind its value.
+		isValidatorLine := startsValidator(toks, 0)
+
 		if !headerDone {
 			headerDone = true
 
@@ -79,6 +87,9 @@ func Parse(src string) *File {
 			// A constraint line belongs to the entry above it rather than
 			// opening a new one, so it never takes part in the nesting.
 			f.parseConstraint(ln, indent, toks, last)
+			continue
+		} else if isValidatorLine {
+			f.parseValidatorLine(ln, indent, toks, last)
 			continue
 		} else {
 			ft = f.parseEntry(ln, indent, toks)
@@ -274,8 +285,20 @@ func (f *File) parseConfigEntry(ln, indent int, toks []token) *Feature {
 		case "<", "<<":
 			f.diag(SeverityError, rangeOf(ln, toks[i]),
 				"a validator belongs on the parameter in the feature model, not in a configuration")
-			i = f.parseValidator(ln, ft, toks, i)
+			i = f.retiredValidator(ln, ft, toks, i)
 		default:
+			// A validator written here is one mistake, so it gets one
+			// message. Falling through to the general case reported the name
+			// as unexpected and then its brackets as a misplaced validator,
+			// which named the problem only on the second line.
+			if startsValidator(toks, i) {
+				f.diag(SeverityError, rangeOf(ln, toks[i]),
+					"a validator belongs on the parameter in the feature model, "+
+						"not in a configuration")
+				i = f.skipBrackets(toks, i+1)
+				continue
+			}
+
 			f.diag(SeverityError, rangeOf(ln, toks[i]),
 				"unexpected %q after %q; a binding goes in %q and a value in %q",
 				toks[i].text, ft.Name, "{}", "()")
@@ -368,11 +391,7 @@ func (f *File) parseModelEntry(ln, indent int, toks []token) *Feature {
 			i = f.parseDefault(ln, ft, toks, i)
 
 		case "<", "<<":
-			if ft.Validator.Kind != ValidatorNone {
-				f.diag(SeverityError, rangeOf(ln, toks[i]),
-					"feature %q already declares a validator", ft.Name)
-			}
-			i = f.parseValidator(ln, ft, toks, i)
+			i = f.retiredValidator(ln, ft, toks, i)
 
 		case "?", "*":
 			if ft.HasMarker {
@@ -386,9 +405,17 @@ func (f *File) parseModelEntry(ln, indent int, toks []token) *Feature {
 			i++
 
 		default:
+			// A validator is a name followed by its arguments, so it starts
+			// here rather than at a bracket.
+			if startsValidator(toks, i) {
+				i = f.parseValidator(ln, ft, toks, i)
+				continue
+			}
+
 			f.diag(SeverityError, rangeOf(ln, toks[i]),
-				"unexpected %q after the type of %q; bindings go in %q, a value in %q, a validator in %q and %q marks it optional",
-				toks[i].text, ft.Name, "{}", "()", "<>", "?")
+				"unexpected %q after the type of %q; bindings go in %q, a value in %q, "+
+					"a validator is written as %q, and %q marks it optional",
+				toks[i].text, ft.Name, "{}", "()", "bounds<0.0, 3.0>", "?")
 			i++
 		}
 	}
@@ -537,23 +564,69 @@ func (f *File) parseDefault(ln int, ft *Feature, toks []token, i int) int {
 	return i
 }
 
-// parseValidator reads the angle-bracketed value constraint. The form decides
-// which validator it is: two arguments are bounds unless one is `#`, a single
-// argument is a fixed size, and a doubled bracket is an enumeration.
-func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
-	open := toks[i]
-	oneOf := open.text == "<<"
-	closer := ">"
-	if oneOf {
-		closer = ">>"
+// skipBrackets advances past a bracketed group starting at toks[i], so that
+// one mistake does not produce a second diagnostic for its contents.
+func (f *File) skipBrackets(toks []token, i int) int {
+	for ; i < len(toks); i++ {
+		if toks[i].text == ">" {
+			return i + 1
+		}
 	}
-	i++
+	return i
+}
+
+// parseValidatorLine reads a line holding only validators, which belong to the
+// parameter above rather than opening an entry of their own.
+func (f *File) parseValidatorLine(ln, indent int, toks []token, owner *Feature) {
+	r := rangeOf(ln, toks[0])
+
+	switch {
+	case owner == nil:
+		f.diag(SeverityError, r, "a validator needs a parameter above it to constrain")
+		return
+
+	case indent <= owner.Indent:
+		f.diag(SeverityError, r,
+			"a validator on its own line belongs to the parameter above it: "+
+				"indent it past %q", owner.Name)
+		return
+
+	case !owner.Type.IsValue():
+		f.diag(SeverityError, r,
+			"a %s cannot carry a validator; only a parameter constrains its own value",
+			owner.Type)
+		return
+	}
+
+	for i := 0; i < len(toks); {
+		if !startsValidator(toks, i) {
+			f.diag(SeverityError, rangeOf(ln, toks[i]),
+				"unexpected %q; a validator is written as %q", toks[i].text, "bounds<0.0, 3.0>")
+			return
+		}
+		i = f.parseValidator(ln, owner, toks, i)
+	}
+}
+
+// parseValidator reads one validator, written as a name followed by its
+// arguments in angle brackets: `bounds<0.0, 3.0>`, or `not_empty<>` for one
+// that takes none. The name says which validator it is, so nothing is inferred
+// from the argument count.
+//
+// toks[i] is the name; toks[i+1] is "<".
+func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
+	name := toks[i]
+	nameRange := rangeOf(ln, name)
+	i++ // the name
+
+	open := toks[i]
+	i++ // "<"
 
 	var (
 		args    []string
+		current []string
 		last    = open
 		closed  bool
-		current []string
 	)
 
 	flush := func() {
@@ -564,7 +637,7 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 	}
 
 	for ; i < len(toks); i++ {
-		if toks[i].text == closer {
+		if toks[i].text == ">" {
 			closed = true
 			last = toks[i]
 			i++
@@ -585,62 +658,131 @@ func (f *File) parseValidator(ln int, ft *Feature, toks []token, i int) int {
 
 	flush()
 
-	ft.Validator.Range = Range{
-		Line:      ln,
-		StartChar: open.col,
-		EndChar:   last.col + utf16Len(last.text),
+	v := Validator{
+		NameRange: nameRange,
+		Args:      args,
+		Range: Range{
+			Line:      ln,
+			StartChar: name.col,
+			EndChar:   last.col + utf16Len(last.text),
+		},
 	}
 
 	if !closed {
-		f.diag(SeverityError, ft.Validator.Range, "unclosed %q in feature %q", open.text, ft.Name)
+		f.diag(SeverityError, v.Range, "unclosed %q in %q", "<", name.text+"<")
 	}
 
-	ft.Validator.Args = args
+	spec, known := LookupValidator(name.text)
+	if !known {
+		f.diag(SeverityError, nameRange, "there is no validator called %q; %s",
+			name.text, validatorSuggestion(name.text))
+		return i
+	}
+
+	v.Kind = spec.Kind
 
 	switch {
-	case oneOf:
-		ft.Validator.Kind = ValidatorOneOf
-		if len(args) == 0 {
-			f.diag(SeverityError, ft.Validator.Range,
-				"%q needs at least one permitted value", "<<>>")
-		}
+	case spec.MaxArgs == 0 && len(args) > 0:
+		f.diag(SeverityError, v.Range, "%s takes no arguments", spec.Written())
+		return i
 
-	case len(args) == 1:
-		if args[0] == "#" {
-			f.diag(SeverityError, ft.Validator.Range,
-				"%q on its own constrains nothing; write a size, a range or one open end", "#")
-			ft.Validator.Kind = ValidatorNone
-			return i
-		}
-		ft.Validator.Kind = ValidatorFixedSize
+	case len(args) < spec.MinArgs:
+		f.diag(SeverityError, v.Range, "%s takes %s, and %d %s given",
+			spec.Written(), spec.arity(), len(args), plural(len(args), "was", "were"))
+		return i
 
-	case len(args) == 2:
-		lowOpen, highOpen := args[0] == "#", args[1] == "#"
-
-		switch {
-		case lowOpen && highOpen:
-			f.diag(SeverityError, ft.Validator.Range,
-				"both ends are %q, so this constrains nothing", "#")
-			ft.Validator.Kind = ValidatorNone
-		case highOpen:
-			ft.Validator.Kind = ValidatorGtEq
-			ft.Validator.Args = args[:1]
-		case lowOpen:
-			ft.Validator.Kind = ValidatorLtEq
-			ft.Validator.Args = args[1:]
-		default:
-			ft.Validator.Kind = ValidatorBounds
-		}
-
-	case len(args) == 0:
-		f.diag(SeverityError, ft.Validator.Range,
-			"expected a size, a range, or an open end marked %q", "#")
-
-	default:
-		f.diag(SeverityError, ft.Validator.Range,
-			"a range takes two arguments; use %q for an enumeration", "<<a, b, c>>")
+	case spec.MaxArgs >= 0 && len(args) > spec.MaxArgs:
+		f.diag(SeverityError, v.Range, "%s takes %s, and %d were given",
+			spec.Written(), spec.arity(), len(args))
+		return i
 	}
 
+	for _, existing := range ft.Validators {
+		if existing.Kind == v.Kind {
+			f.diag(SeverityError, nameRange,
+				"feature %q already declares %s", ft.Name, spec.Written())
+			return i
+		}
+	}
+
+	ft.Validators = append(ft.Validators, v)
+	return i
+}
+
+// startsValidator reports whether a validator begins at toks[i], which is the
+// case for a name immediately followed by its argument list.
+func startsValidator(toks []token, i int) bool {
+	return i+1 < len(toks) && isName(toks[i].text) && toks[i+1].text == "<"
+}
+
+// plural picks between two words by count.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// validatorSuggestion names the closest validator, or lists them when nothing
+// is close, so a misspelling says what was meant rather than only that it was
+// wrong.
+func validatorSuggestion(given string) string {
+	best, bestScore := "", 0
+
+	for _, spec := range validatorSpecs {
+		if score := commonPrefix(given, spec.Name); score > bestScore {
+			best, bestScore = spec.Name, score
+		}
+	}
+
+	if bestScore >= 2 {
+		return fmt.Sprintf("did you mean %q?", best)
+	}
+
+	names := make([]string, 0, len(validatorSpecs))
+	for _, spec := range validatorSpecs {
+		names = append(names, spec.Name)
+	}
+	return "the validators are " + strings.Join(names, ", ")
+}
+
+func commonPrefix(a, b string) int {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return n
+}
+
+// retiredValidator reports a validator written the way the DSL used to spell
+// it. The old forms inferred which validator was meant from the shape of the
+// brackets; naming it removed the guessing, and these say what to write now.
+func (f *File) retiredValidator(ln int, ft *Feature, toks []token, i int) int {
+	open := toks[i]
+	r := rangeOf(ln, open)
+
+	switch open.text {
+	case "<<":
+		f.diag(SeverityError, r,
+			"%q is no longer how an enumeration is written; use %q", "<<a, b>>", "one_of<a, b>")
+	default:
+		f.diag(SeverityError, r,
+			"a validator is written by name before its arguments, as %q, %q or %q",
+			"bounds<0.0, 3.0>", "gt<0.0>", "not_empty<>")
+	}
+
+	// Skip to the end of the bracketed group so the rest of the line still
+	// parses and a second diagnostic is not raised for its contents.
+	closer := ">"
+	if open.text == "<<" {
+		closer = ">>"
+	}
+	for i++; i < len(toks); i++ {
+		if toks[i].text == closer {
+			return i + 1
+		}
+	}
+	_ = ft
 	return i
 }
 

@@ -46,9 +46,9 @@ func (p ParamFile) FileName() string {
 //
 // The DSL's type names were chosen to match the library's, so no translation
 // is needed. Two things are derived rather than written: `description` is
-// always blank, and `read_only` follows the binding mode of the node the
-// parameter ends up on, since a statically bound node cannot be rebound and so
-// neither can its parameters.
+// always blank, and `read_only` states the binding mode of the node the
+// parameter ends up on — true for static, false for dynamic — since a
+// statically bound node cannot be rebound and so neither can its parameters.
 //
 // A grouping is a choice point rather than a worker: its children are the
 // alternatives, and it is one of them that runs. A parameter written at a
@@ -168,12 +168,20 @@ func renderNode(node *ftx.Feature, params []*ftx.Feature) []byte {
 		sb.WriteString("    description: \"\"\n")
 
 		// A statically bound node is fixed once bound, so its parameters are
-		// not reconfigurable either. This follows the node the specification
-		// is being written for, not the parameter's place in the model: a
-		// parameter handed down from a grouping belongs to the alternative
-		// that received it, and is as reconfigurable as that alternative is.
-		if node.Mode == ftx.ModeStatic {
+		// not reconfigurable either; a dynamic one's stay reconfigurable.
+		// Both are written out rather than leaning on the generator's default
+		// for the false case, so that a specification states what the model
+		// says instead of leaving it to be inferred from an absence.
+		//
+		// This follows the node the specification is being written for, not
+		// the parameter's place in the model: a parameter handed down from a
+		// grouping belongs to the alternative that received it, and is as
+		// reconfigurable as that alternative is.
+		switch node.Mode {
+		case ftx.ModeStatic:
 			sb.WriteString("    read_only: true\n")
+		case ftx.ModeDynamic:
+			sb.WriteString("    read_only: false\n")
 		}
 
 		if v := validation(p); v != "" {
@@ -184,27 +192,50 @@ func renderNode(node *ftx.Feature, params []*ftx.Feature) []byte {
 	return []byte(sb.String())
 }
 
-// validation renders the parameter's validator as the library spells it.
+// validation renders a parameter's validators as the library spells them.
+//
+// A validator is named in the model by the same name the library uses, so each
+// becomes one key with its arguments. Nothing has to be translated or split:
+// where a range with an excluded end once had to become a pair of one-sided
+// validators, the model now says gt and lt directly.
 func validation(p *ftx.Feature) string {
-	v := p.Validator
-	if v.Kind == ftx.ValidatorNone {
+	if len(p.Validators) == 0 {
 		return ""
 	}
 
 	element := p.Type.Element()
 
-	switch v.Kind {
-	case ftx.ValidatorOneOf:
-		// one_of takes a list of permitted values, nested one level because
-		// the library passes it as a single argument.
-		return fmt.Sprintf("      %s: [%s]\n", v.Kind, list(element, v.Args))
+	var sb strings.Builder
 
-	case ftx.ValidatorFixedSize:
-		return fmt.Sprintf("      %s: [%s]\n", v.Kind, v.Args[0])
+	for _, v := range p.Validators {
+		if v.Kind == ftx.ValidatorNone {
+			continue
+		}
 
-	default:
-		return fmt.Sprintf("      %s: %s\n", v.Kind, list(element, v.Args))
+		spec := v.Kind.Spec()
+
+		switch {
+		case spec.MaxArgs == 0:
+			// A validator taking no arguments still needs a list, which the
+			// generator reads as "no arguments".
+			fmt.Fprintf(&sb, "      %s: []\n", v.Kind.Library())
+
+		case spec.Nested:
+			// The library takes these as a single list argument, so they sit
+			// one level deeper.
+			fmt.Fprintf(&sb, "      %s: [%s]\n", v.Kind.Library(), list(element, v.Args))
+
+		case spec.Counts:
+			// A count is a number of elements or characters, never a value of
+			// the parameter's own type.
+			fmt.Fprintf(&sb, "      %s: [%s]\n", v.Kind.Library(), strings.Join(v.Args, ", "))
+
+		default:
+			fmt.Fprintf(&sb, "      %s: %s\n", v.Kind.Library(), list(element, v.Args))
+		}
 	}
+
+	return sb.String()
 }
 
 // literal renders a value, as a flow sequence for an array type.
@@ -230,8 +261,26 @@ func list(element ftx.Type, values []string) string {
 // scalar quotes a value only where YAML needs it, so that numbers and bools
 // stay numbers and bools.
 func scalar(t ftx.Type, value string) string {
-	if t == ftx.TypeString {
-		return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+	if t != ftx.TypeString {
+		return value
 	}
-	return value
+
+	// A string may be written with quotes or without: `(autonomous)` and
+	// `("autonomous")` are the same string. Escaping them instead of reading
+	// them as delimiters made the quotes part of the value, so a default
+	// written the quoted way reached the generated code still carrying them.
+	return `"` + strings.ReplaceAll(unquote(value), `"`, `\"`) + `"`
+}
+
+// unquote removes one matching pair of surrounding quotes, if there is one.
+func unquote(s string) string {
+	if len(s) < 2 {
+		return s
+	}
+
+	if first, last := s[0], s[len(s)-1]; first == last && (first == '"' || first == '\'') {
+		return s[1 : len(s)-1]
+	}
+
+	return s
 }

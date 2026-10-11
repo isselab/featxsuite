@@ -110,10 +110,12 @@ wrote featxcli/featxcli/model/to_loading_params.yaml
 
 The DSL's type names and validators were chosen to match the library's, so the
 mapping is direct. Two fields are derived rather than written: `description` is
-always blank, for a human to fill in, and `read_only` follows the **binding
-mode** of the node the specification is for — a `static` node cannot be
-rebound, so neither can its parameters, while a `dynamic` node's stay
-reconfigurable.
+always blank, for a human to fill in, and `read_only` states the **binding
+mode** of the node the specification is for: `true` for `static`, since such a
+node cannot be rebound and so neither can its parameters, and `false` for
+`dynamic`, whose parameters stay reconfigurable. Both are written out rather
+than leaving the false case to the generator's default, so a specification
+states what the model says instead of leaving it to be read from an absence.
 
 A parameter written at a **grouping** is declared on each of its alternatives
 rather than on the grouping itself. A grouping is a choice point: its children
@@ -124,7 +126,7 @@ where the ones that do cannot read it. So this
 
 ```
 xor navigation : node {static early} ?
-    vel_max : double (1.6) <0.0, 3.0>
+    vel_max : double (1.6) bounds<0.0, 3.0>
     to_loading : node {dynamic late}
     to_delivery : node {dynamic late}
 ```
@@ -245,9 +247,9 @@ type       := "node" | "bool" | "int" | "double" | "string"
             | "bool_array" | "int_array" | "double_array" | "string_array"
 bindings   := "{" mode time "}"
 value      := "(" literal ("," literal)* ")"
-validator  := "<" arg "," arg ">"      -- bounds, or gt_eq/lt_eq with "#"
-            | "<<" arg ("," arg)* ">>" -- one_of
-            | "<" n ">"                -- fixed_size
+validator  := NAME "<" [arg ("," arg)*] ">"
+              -- bounds, gt, gt_eq, lt, lt_eq, one_of,
+              -- fixed_size, size_gt, size_lt, not_empty
 mode       := "static" | "dynamic"
 time       := "early" | "late"
 op         := "&&" | "||"
@@ -313,7 +315,7 @@ that encloses them, and may carry a value in parentheses:
 
 ```
 xor navigation : node {static early} ?
-    vel_max : double (1.6) <0.0, 3.0>
+    vel_max : double (1.6) bounds<0.0, 3.0>
     joints : string_array (j1, j2)
 ```
 
@@ -328,21 +330,95 @@ hover reports. Giving a node a value, or a parameter children, is an error.
 
 ### Validators
 
-A parameter may constrain its own value in angle brackets, which map onto
-`generate_parameter_library`'s validators:
+A validator constrains a value, so it can only be written on a **parameter**. A
+node is bound rather than valued — it carries bindings, children and
+constraints instead — and the root is only the model's name, so neither takes
+one. Nor does a configuration: which values a parameter may hold is the model's
+to state, and a configuration only selects features.
+
+Each validator is written by the name `generate_parameter_library` gives it,
+with its arguments after it, so the model and the generated schema use the same
+word. An editor completes these, offering only the ones the parameter's type
+accepts — ranges and `one_of` on a `double`, lengths and `one_of` on a
+`string`, and nothing at all on a node:
 
 | Written | Generated | Meaning |
 |---|---|---|
-| `<0.0, 3.0>` | `bounds<>: [0.0, 3.0]` | within a range |
-| `<0.0, #>` | `gt_eq<>: [0.0]` | at least, upper end open |
-| `<#, 0.0>` | `lt_eq<>: [0.0]` | at most, lower end open |
-| `<<0.0, 3.0, 7.0>>` | `one_of<>: [[0.0, 3.0, 7.0]]` | one of these |
-| `<4>` | `fixed_size<>: [4]` | an array's length |
+| `bounds<0.0, 3.0>` | `bounds<>: [0.0, 3.0]` | within a range, both ends admitted |
+| `gt<0.0>` | `gt<>: [0.0]` | greater than |
+| `gt_eq<0.0>` | `gt_eq<>: [0.0]` | greater than or equal to |
+| `lt<3.0>` | `lt<>: [3.0]` | less than |
+| `lt_eq<3.0>` | `lt_eq<>: [3.0]` | less than or equal to |
+| `one_of<slow, fast>` | `one_of<>: [["slow", "fast"]]` | one of these |
+| `fixed_size<4>` | `fixed_size<>: [4]` | exactly this long |
+| `size_gt<2>` | `size_gt<>: [2]` | longer than |
+| `size_lt<20>` | `size_lt<>: [20]` | shorter than |
+| `not_empty<>` | `not_empty<>: []` | not of zero length |
 
-`#` marks an open end. A range needs a numeric type, `<n>` needs an array
-type, and the checker also reports a range whose ends are reversed and a
-default its own validator rejects — all of which would otherwise only surface
-when the node started.
+The first five need a numeric type. `one_of` takes any parameter. The last four
+measure a **length**, which a `string` and an array both have, so
+`fixed_size<8>` is eight characters on a string and eight elements on an array.
+
+An array can therefore be constrained in its length but not yet in its
+elements. `generate_parameter_library` also offers `element_bounds`,
+`lower_element_bounds`, `upper_element_bounds`, `unique` and `subset_of`, which
+hold over every element rather than over the value as a whole; none of them has
+a spelling here yet, and an unknown name says which validators do exist. Note
+that `bounds<>` on an array is **not** the element-wise one: the library reads
+it as a single value, so `element_bounds` is what "every element in range"
+needs.
+
+Two validators have to stand alone, because each already decides what the
+others would.
+
+**`bounds<>`** gives both ends at once, so a comparison or an enumeration
+written beside it states a limit the parameter already has, either repeating
+one end or disagreeing with it. A range open at one end is therefore written as
+the pair it is — `gt<0.0> lt_eq<3.0>` — rather than as `bounds<>` with a
+correction after it.
+
+**`one_of<>`** says exactly which values are permitted, so their lengths follow
+from it. A length validator beside one either excludes none of them, saying
+nothing, or excludes some, in which case the enumeration written is not the one
+that holds. Writing the enumeration you mean says it once.
+
+A comparison beside `one_of<>` is different: it narrows the enumeration rather
+than duplicating it, so it stays legal — as long as something survives.
+`one_of<1.0, 2.0, 3.0> gt<1.5>` is accepted; `one_of<1.0, 2.0, 3.0> gt<5.0>` is
+reported, because nothing the parameter permits is acceptable and no default
+would have helped.
+
+A parameter may otherwise carry **several** validators. The library applies
+each in turn, so a length range is a pair of them:
+
+```
+mode : string ("autonomous") not_empty<> size_lt<20>
+```
+
+Each may instead sit on its own line beneath the parameter, the way a
+constraint sits beneath its feature. Which you choose is kept — the formatter
+moves neither onto the other:
+
+```
+mode : string (autonomous)
+    not_empty<>
+    size_lt<20>
+```
+
+Naming them replaced an older notation that inferred the validator from the
+shape of its brackets — `<0.0, 3.0>` for a range, `<4>` for a size, `#` for an
+unbounded end, `!` for an excluded one, `<<a, b>>` for an enumeration. The
+shape had to carry the meaning because there was nowhere to put a name, and it
+had run out of room: `not_empty` takes no arguments, which no arrangement of
+brackets can express. Those forms are rejected with a message naming what to
+write instead.
+
+Beyond the type, the checker reports an unknown validator with the nearest
+match, the wrong number of arguments, a validator twice on one parameter, a
+pair that nothing can satisfy (`gt<10.0> lt<5.0>`), a comparison written beside
+`bounds<>`, a range whose ends are reversed, and a default its own validators
+reject — including one too short or
+too long for a size. All of these would otherwise wait until the node started.
 
 ### Constraints
 
@@ -400,9 +476,12 @@ Semantics, per document:
 - a parameter with no enclosing bound node, so nothing is bound with it
 - a value that does not suit its type: `double (fast)`, `int (1.5)`, `bool (yes)`
 - a scalar given several values, or an array element of the wrong type
-- a validator that cannot apply: a range on a non-numeric type, `<n>` on a
-  scalar, a validator on a node, a reversed range, both ends `#`, or a
-  `fixed_size` that disagrees with the value's length
+- a validator that cannot apply: a range on a non-numeric type, a size on a
+  scalar, a validator on a node, an unknown name, the wrong number of
+  arguments, a validator written twice, a comparison or an enumeration beside
+  `bounds<>`, a length validator beside `one_of<>`, an enumeration none of
+  whose values pass the other validators, a reversed range, a pair nothing can satisfy, or a `fixed_size`
+  that disagrees with the value's length
 - a default its own validator rejects: outside a range, or absent from an
   enumeration
 - `||` in an exclusion, where the connective makes no difference

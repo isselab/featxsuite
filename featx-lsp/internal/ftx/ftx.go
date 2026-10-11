@@ -93,6 +93,10 @@ var typeNames = map[Type]string{
 
 func (t Type) String() string { return typeNames[t] }
 
+// TypeNamed returns the type a word names, for a caller outside the parser
+// that needs to know whether a type has already been written.
+func TypeNamed(word string) (Type, bool) { return typeFrom(word) }
+
 // IsValue reports whether the type carries a value rather than behaviour.
 func (t Type) IsValue() bool {
 	return t != TypeUnset && t != TypeNode
@@ -132,35 +136,195 @@ func (t Type) Element() Type {
 	return t
 }
 
-// ValidatorKind is the constraint a parameter places on its own value. The
-// surface forms are angle brackets after the value:
+// ValidatorKind is the constraint a parameter places on its own value.
 //
-//	<lo, hi>    bounds        both ends given
-//	<lo, #>     gt_eq         only a lower end
-//	<#, hi>     lt_eq         only an upper end
-//	<<a, b, c>> one_of        an enumeration
-//	<n>         fixed_size    an array's length
+// Every validator is written by name, with its arguments in angle brackets, as
+// generate_parameter_library spells it:
+//
+//	bounds<0.0, 3.0>      within a range, both ends admitted
+//	gt<0.0>  gt_eq<0.0>   above a lower bound, excluded or admitted
+//	lt<3.0>  lt_eq<3.0>   below an upper bound, excluded or admitted
+//	one_of<slow, fast>    one of an enumeration
+//	fixed_size<4>         an exact length
+//	size_gt<2> size_lt<9> a length compared, strictly
+//	not_empty<>           a length of at least one
+//
+// A name says which library function applies, so nothing has to be inferred
+// from how many arguments were written or from a marker on one of them. A
+// parameter may carry several, written one after another, which the library
+// applies in turn.
 type ValidatorKind int
 
 const (
 	ValidatorNone ValidatorKind = iota
 	ValidatorBounds
+	ValidatorGt
 	ValidatorGtEq
+	ValidatorLt
 	ValidatorLtEq
 	ValidatorOneOf
 	ValidatorFixedSize
+	ValidatorSizeGt
+	ValidatorSizeLt
+	ValidatorNotEmpty
 )
 
-// validatorNames are the names generate_parameter_library knows them by.
-var validatorNames = map[ValidatorKind]string{
-	ValidatorBounds:    "bounds<>",
-	ValidatorGtEq:      "gt_eq<>",
-	ValidatorLtEq:      "lt_eq<>",
-	ValidatorOneOf:     "one_of<>",
-	ValidatorFixedSize: "fixed_size<>",
+// Domain is what a validator can be written on. The library decides these: a
+// range compares the value, a size counts it, and some only make sense over
+// the elements of an array.
+type Domain int
+
+const (
+	// DomainNumeric compares the value itself, so it needs a numeric type.
+	DomainNumeric Domain = iota
+	// DomainAnyValue compares the value without ordering it.
+	DomainAnyValue
+	// DomainSized counts a length, which a string and an array both have.
+	DomainSized
+)
+
+// Accepts reports whether a type may carry a validator of this domain.
+func (d Domain) Accepts(t Type) bool {
+	switch d {
+	case DomainNumeric:
+		return t.IsNumeric()
+	case DomainSized:
+		return t == TypeString || t.IsArray()
+	default:
+		return t.IsValue()
+	}
 }
 
-func (v ValidatorKind) String() string { return validatorNames[v] }
+func (d Domain) String() string {
+	switch d {
+	case DomainNumeric:
+		return "a numeric type"
+	case DomainSized:
+		return "a string or an array"
+	default:
+		return "a parameter"
+	}
+}
+
+// ValidatorSpec describes one validator. Everything that reads a validator —
+// the parser, the checker, the formatter and the generator — reads it from
+// here, so adding one is a row rather than a row and a handful of switches.
+type ValidatorSpec struct {
+	Kind ValidatorKind
+	Name string // how it is written, and what the library calls it
+
+	// MinArgs and MaxArgs bound the argument count. MaxArgs is -1 when any
+	// number is allowed.
+	MinArgs int
+	MaxArgs int
+
+	Domain Domain
+
+	// Nested marks a validator the library takes as a single list argument,
+	// which the generator writes one level deeper.
+	Nested bool
+
+	// Counts marks a validator whose arguments are lengths rather than values,
+	// so they are whole numbers whatever the parameter's type.
+	Counts bool
+}
+
+var validatorSpecs = []ValidatorSpec{
+	{Kind: ValidatorBounds, Name: "bounds", MinArgs: 2, MaxArgs: 2, Domain: DomainNumeric},
+	{Kind: ValidatorGt, Name: "gt", MinArgs: 1, MaxArgs: 1, Domain: DomainNumeric},
+	{Kind: ValidatorGtEq, Name: "gt_eq", MinArgs: 1, MaxArgs: 1, Domain: DomainNumeric},
+	{Kind: ValidatorLt, Name: "lt", MinArgs: 1, MaxArgs: 1, Domain: DomainNumeric},
+	{Kind: ValidatorLtEq, Name: "lt_eq", MinArgs: 1, MaxArgs: 1, Domain: DomainNumeric},
+	{Kind: ValidatorOneOf, Name: "one_of", MinArgs: 1, MaxArgs: -1, Domain: DomainAnyValue, Nested: true},
+	{Kind: ValidatorFixedSize, Name: "fixed_size", MinArgs: 1, MaxArgs: 1, Domain: DomainSized, Counts: true},
+	{Kind: ValidatorSizeGt, Name: "size_gt", MinArgs: 1, MaxArgs: 1, Domain: DomainSized, Counts: true},
+	{Kind: ValidatorSizeLt, Name: "size_lt", MinArgs: 1, MaxArgs: 1, Domain: DomainSized, Counts: true},
+	{Kind: ValidatorNotEmpty, Name: "not_empty", MinArgs: 0, MaxArgs: 0, Domain: DomainSized},
+}
+
+// Written is how the validator appears in a message: `bounds<>`, matching both
+// the DSL and the generated schema.
+func (s ValidatorSpec) Written() string { return s.Name + "<>" }
+
+// arity describes the argument count a validator accepts.
+func (s ValidatorSpec) arity() string {
+	switch {
+	case s.MaxArgs < 0 && s.MinArgs == 1:
+		return "one argument or more"
+	case s.MaxArgs < 0:
+		return fmt.Sprintf("%d arguments or more", s.MinArgs)
+	case s.MinArgs == s.MaxArgs && s.MinArgs == 1:
+		return "one argument"
+	case s.MinArgs == s.MaxArgs:
+		return fmt.Sprintf("%d arguments", s.MinArgs)
+	default:
+		return fmt.Sprintf("%d to %d arguments", s.MinArgs, s.MaxArgs)
+	}
+}
+
+// ValidatorSpecs returns every validator the DSL knows, in the order they are
+// documented. Completion and hover read this.
+func ValidatorSpecs() []ValidatorSpec { return validatorSpecs }
+
+// LookupValidator finds a validator by the name it is written with.
+func LookupValidator(name string) (ValidatorSpec, bool) {
+	for _, spec := range validatorSpecs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	return ValidatorSpec{}, false
+}
+
+// Spec returns the description of this kind.
+func (v ValidatorKind) Spec() ValidatorSpec {
+	for _, spec := range validatorSpecs {
+		if spec.Kind == v {
+			return spec
+		}
+	}
+	return ValidatorSpec{}
+}
+
+// String is the name the validator is written with, which is also the library's
+// own name for it.
+func (v ValidatorKind) String() string { return v.Spec().Name }
+
+// Library is how the generated schema keys this validator.
+func (v ValidatorKind) Library() string { return v.Spec().Name + "<>" }
+
+// IsRange reports whether this validator constrains a numeric interval.
+func (v ValidatorKind) IsRange() bool {
+	switch v {
+	case ValidatorBounds, ValidatorGtEq, ValidatorGt, ValidatorLtEq, ValidatorLt:
+		return true
+	}
+	return false
+}
+
+// HasLower reports whether the validator constrains the low end of a range.
+func (v ValidatorKind) HasLower() bool {
+	switch v {
+	case ValidatorBounds, ValidatorGtEq, ValidatorGt:
+		return true
+	}
+	return false
+}
+
+// HasUpper reports whether the validator constrains the high end of a range.
+func (v ValidatorKind) HasUpper() bool {
+	switch v {
+	case ValidatorBounds, ValidatorLtEq, ValidatorLt:
+		return true
+	}
+	return false
+}
+
+// LowerExcludes reports whether a value equal to the lower bound is rejected.
+func (v ValidatorKind) LowerExcludes() bool { return v == ValidatorGt }
+
+// UpperExcludes reports whether a value equal to the upper bound is rejected.
+func (v ValidatorKind) UpperExcludes() bool { return v == ValidatorLt }
 
 // Validator is a parameter's value constraint, with its arguments kept
 // verbatim so that the generator and the formatter both reproduce them.
@@ -168,6 +332,10 @@ type Validator struct {
 	Kind  ValidatorKind
 	Args  []string
 	Range Range
+
+	// NameRange covers the name alone, for a diagnostic about the validator
+	// rather than about one of its arguments.
+	NameRange Range
 }
 
 // Op is the connective joining the operands of a constraint.
@@ -363,8 +531,9 @@ type Feature struct {
 	DefaultValues []string
 	DefaultRange  Range
 
-	// Validator constrains the parameter's own value.
-	Validator Validator
+	// Validators constrain the parameter's own value. A parameter may carry
+	// several, which the library applies in turn.
+	Validators []Validator
 
 	// Constraints are the bracketed lines that followed this entry, in source
 	// order, each either a requirement or an exclusion.
@@ -407,14 +576,60 @@ func (f *Feature) DefaultText() string {
 // ValidatorText renders the angle-bracketed validator as it appears in source,
 // or "" when the feature has none.
 func (f *Feature) ValidatorText() string {
-	switch f.Validator.Kind {
-	case ValidatorNone:
-		return ""
-	case ValidatorOneOf:
-		return "<<" + strings.Join(f.Validator.Args, ", ") + ">>"
-	default:
-		return "<" + strings.Join(f.Validator.Args, ", ") + ">"
+	return validatorsText(f.InlineValidators())
+}
+
+// validatorsText renders validators as they are written: a name, then its
+// arguments in angle brackets.
+func validatorsText(vs []Validator) string {
+	parts := make([]string, 0, len(vs))
+
+	for _, v := range vs {
+		if v.Kind == ValidatorNone {
+			continue
+		}
+		parts = append(parts, v.Kind.String()+"<"+strings.Join(v.Args, ", ")+">")
 	}
+
+	return strings.Join(parts, " ")
+}
+
+// InlineValidators are the validators written on the feature's own line.
+//
+// Where a validator sits is the author's choice and is kept: a parameter with
+// one validator reads well on a single line, while several read better stacked
+// beneath it, as constraints are. The line each was written on is what says
+// which was meant.
+func (f *Feature) InlineValidators() []Validator {
+	var out []Validator
+
+	for _, v := range f.Validators {
+		if v.Range.Line == f.Line {
+			out = append(out, v)
+		}
+	}
+
+	return out
+}
+
+// ValidatorLines are the validators written beneath the feature, grouped by
+// the line they share, in the order they appear.
+func (f *Feature) ValidatorLines() [][]Validator {
+	var out [][]Validator
+
+	last := -1
+	for _, v := range f.Validators {
+		if v.Range.Line == f.Line {
+			continue
+		}
+		if v.Range.Line != last {
+			out = append(out, nil)
+			last = v.Range.Line
+		}
+		out[len(out)-1] = append(out[len(out)-1], v)
+	}
+
+	return out
 }
 
 // Binding renders the feature's binding pair as it appears in source.

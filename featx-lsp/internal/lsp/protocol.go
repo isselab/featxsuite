@@ -112,6 +112,7 @@ type Hover struct {
 
 // CompletionItemKind values used by this server.
 const (
+	CompletionItemKindFunction = 3
 	CompletionItemKindKeyword  = 14
 	CompletionItemKindProperty = 10
 	CompletionItemKindEnum     = 13

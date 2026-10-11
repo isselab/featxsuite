@@ -79,6 +79,14 @@ func writeEntry(sb *strings.Builder, kind Kind, ft *Feature, depth int) bool {
 
 	sb.WriteByte('\n')
 
+	// A validator the author put on its own line stays there, one level in
+	// from the parameter it constrains.
+	for _, group := range ft.ValidatorLines() {
+		sb.WriteString(strings.Repeat(" ", (depth+1)*IndentUnit))
+		sb.WriteString(validatorsText(group))
+		sb.WriteByte('\n')
+	}
+
 	// A constraint is written one level in from the feature it applies to.
 	for _, c := range ft.Constraints {
 		sb.WriteString(strings.Repeat(" ", (depth+1)*IndentUnit))

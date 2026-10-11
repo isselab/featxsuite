@@ -254,12 +254,13 @@ implementation:
 
 ```
 xor navigation : node {static early} ?       a node: you write code for this
-    vel_max : double (1.6) <0.0, 3.0>        a parameter: you do not
+    vel_max : double (1.6) bounds<0.0, 3.0>  a parameter: you do not
     to_loading : node {dynamic late}         a node: you write code for this
 ```
 
 A feature typed `node` is a ROS node. It has bindings, it is something you
-write, and it is what `featx load` binds.
+write, and it is what `featx load` binds. It carries no validator: a validator
+constrains a value, and a node is bound rather than valued.
 
 Every other type — `bool`, `int`, `double`, `string` and the four array types —
 declares a **ROS parameter** of the node that encloses it. There is no class to
@@ -480,7 +481,7 @@ Declare it in `features.ftx` with a default and, if you want one, a validator:
 
 ```
 lift : node {dynamic late}
-    max_height : double (2.0) <0.0, 4.0>
+    max_height : double (2.0) bounds<0.0, 4.0>
 ```
 
 Deliver the schema to the package, then wire it up:
@@ -504,7 +505,7 @@ params_ = param_listener_->get_params();   // params_.max_height
 
 The generated code declares the parameter, applies the default and enforces the
 validator, so setting `max_height` to `9.9` on the running node is rejected
-because the model said `<0.0, 4.0>`.
+because the model said `bounds<0.0, 4.0>`.
 
 ### Checklist for a new feature
 
@@ -666,7 +667,7 @@ than restated in each package's own schema:
 
 ```
 xor navigation : node {static early} ?
-    vel_max : double (1.6) <0.0, 3.0>
+    vel_max : double (1.6) bounds<0.0, 3.0>
     to_loading : node {dynamic late}
 ```
 
@@ -674,7 +675,25 @@ xor navigation : node {static early} ?
 [generate_parameter_library](https://github.com/PickNikRobotics/generate_parameter_library)
 specification and delivers it to the package that builds the node, which
 generates C++ enforcing both the default and the bounds. Setting `vel_max` to
-`9.9` on a running node is then rejected, because the model said `<0.0, 3.0>`.
+`9.9` on a running node is then rejected, because the model said
+`bounds<0.0, 3.0>`.
+
+Each validator is written by the name `generate_parameter_library` gives it, so
+the model and the schema use the same word: `bounds<0.0, 3.0>` admits both
+ends, `gt<0.0> lt<3.0>` neither, and `gt<0.0> lt_eq<3.0>` only the upper one. A
+parameter may carry several, which the library applies in turn, and a `string`
+or an array may constrain its length with `fixed_size<8>`, `size_gt<2>`,
+`size_lt<20>` or `not_empty<>`. An array's *elements* cannot be constrained
+yet — the library's `element_bounds` and `unique` have no spelling here.
+
+`bounds<0.0, 3.0>` and `one_of<...>` each stand alone: the first gives both
+ends, the second gives the permitted values and so their lengths, and anything
+written beside either would state a limit the parameter already has. Write the
+comparison pair when one end is open, or the enumeration you actually mean.
+
+Whether a parameter can be changed once set follows its node's binding mode,
+and the schema says so either way: `read_only: true` under a `static` node,
+which cannot be rebound, and `read_only: false` under a `dynamic` one.
 
 A parameter written at a grouping belongs to each of its alternatives, since
 those are the nodes that run and a ROS parameter belongs to one node.
